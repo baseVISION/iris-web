@@ -68,6 +68,15 @@ _DS_FILE_FORM_FIELDS = frozenset({
     'file_parent_id',
 })
 
+ALLOWED_FIELDS_DS_FILE = [
+    'file_original_name',
+    'file_description',
+    'file_is_ioc',
+    'file_is_evidence',
+    'file_password',
+    'file_tags',
+    'file_parent_id'
+]
 
 def _filter_ds_form_fields(form):
     """Return a plain dict with only the allowed datastore form fields."""

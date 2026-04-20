@@ -18,6 +18,7 @@
 
 from urllib.parse import urlsplit
 
+from flask import flash
 from flask import session
 from flask import redirect
 from flask import url_for
@@ -38,6 +39,7 @@ from app.iris_engine.utils.tracker import track_activity
 from app.models.authorization import User
 
 import datetime
+import time
 import jwt
 
 
@@ -139,7 +141,26 @@ def wrap_login_user(user, is_oidc=False):
         app.config['SERVER_SETTINGS'] = get_server_settings_as_dict()
 
     if app.config['SERVER_SETTINGS']['enforce_mfa'] is True and is_oidc is False:
-        if "mfa_verified" not in session or session["mfa_verified"] is False:
+        # MFA state must be bound to the specific user who verified — a flat
+        # boolean would let a prior verified session admit a different user on
+        # the same browser (e.g. shared device, attacker knows user B's
+        # password and reuses user A's mfa_verified=True).
+        verified_for = session.get('mfa_verified_for_user_id')
+        if verified_for != user.id:
+            # If the session is currently MFA-locked out, don't reset state
+            # here — an attacker who re-POSTs /login mustn't be able to zero
+            # out the fail counter and get a fresh burst of 5 tokens.
+            locked_until = session.get('mfa_lockout_until')
+            if locked_until and locked_until > time.time():
+                flash('Too many attempts. Please try again later.', 'danger')
+                return redirect(url_for('login.login'))
+            # Mark this browser session as the one that just passed password
+            # auth for this user. mfa_setup / mfa_verify will refuse to run
+            # for any other user id, preventing cross-user MFA handler abuse.
+            session['pre_mfa_user_id'] = user.id
+            session['mfa_fail_count'] = 0
+            session.pop('mfa_lockout_until', None)
+            session.pop('pending_mfa_secret', None)
             return redirect(url_for('mfa_verify'))
 
     login_user(user)

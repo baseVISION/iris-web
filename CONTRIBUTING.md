@@ -1,20 +1,25 @@
-# Contributing to DFIR-IRIS
-*This applies to any repository present in the DFIR-IRIS organisation.* 
+# Contributing to baseVISION iris-web
 
-We are an open project, and we gladly accept contributions of any kinds. The two main ways to contribute are by 
-creating issues or submitting pull requests.  
+This is a fork of [dfir-iris/iris-web](https://github.com/dfir-iris/iris-web) maintained by baseVISION.
 
-## Issues 
-Please try to follow the templates that are provided for feature requests and bugs. Also ensure that you feature or issue
-is not already mentioned in the [roadmap](https://github.com/orgs/dfir-iris/projects/1/views/4). If an issue is similar 
-but not fit perfectly with what you have in mind, you can add comments to it, and it will take into account.  
+## Issues
+Please try to follow the templates provided for feature requests and bugs.
 
-If you want to report a security issue, please read the [security page](./SECURITY.md).   
+If you want to report a security issue, please read the [security page](./SECURITY.md).
 
-## Pull requests 
-Please make sure to follow the [code guideline](./CODESTYLE.md) when writing your code.  
-The pull requests must be submitted on the `develop` branch of the project. Ensure that before submitting you are 
-up-to-date with it.  
+## Pull requests
+Please follow the [code guideline](./CODESTYLE.md) when writing your code.
 
-## Others 
-If you have any ideas not directly link to the code itself, you can directly contact us by [email](mailto:contact@dfir-iris.org). 
+### Internal contributors (baseVISION team)
+- Branch from `bv-develop` and open a PR targeting `bv-develop`.
+- Use the commit prefix convention from `BV-DEV-CONCEPT.md` (`[FIX]`, `[IMP]`, `[ADD]`, `[BV]`, `[BV-FIX]`).
+- Commits without a `[BV]` prefix must be clean enough to submit upstream without modification.
+
+### Contributing back to upstream
+- Branch from `upstream/develop` (not from `bv-develop`) using the naming convention `contrib/<name>`.
+- Only cherry-pick commits that have **no** `[BV]` prefix.
+- Open the PR on [dfir-iris/iris-web](https://github.com/dfir-iris/iris-web) targeting their `develop` branch.
+- Delete the `contrib/` branch after upstream merge.
+
+## Others
+If you have any ideas not directly linked to the code itself, you can contact us by [email](mailto:contact@dfir-iris.org).

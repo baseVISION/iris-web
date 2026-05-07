@@ -1,11 +1,8 @@
 name: Build and push DB image
 
+# Disabled: images are built and pushed to ACR via Azure DevOps.
+# Trigger manually if needed for testing.
 on:
-  push:
-    # Publish semver tags as releases.
-    tags: [ 'v*.*.*' ]
-  pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
 
 env:

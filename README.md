@@ -6,12 +6,16 @@
 <p align="center">
   Incident Response Investigation System
   <br>
-  <i>Current Version v2.4.20</i>
+  <i>Current Version v2.5.0-bv1</i>
   <br>
   <a href="https://v200.beta.dfir-iris.org">Online Demonstration</a>
 </p>
 
-# IRIS
+# IRIS — baseVISION Development Fork
+
+> **This is the baseVISION development fork of [dfir-iris/iris-web](https://github.com/dfir-iris/iris-web).**
+> - For local dev environment setup see [bV-local-dev-environment-setup.md](bV-local-dev-environment-setup.md)
+> - For branching, commit conventions and release workflow see [bV-development-guide.md](bV-development-guide.md)
 
 [![License: LGPL v3](https://img.shields.io/badge/License-LGPL_v3-blue.svg)](./LICENSE.txt)   
 Iris is a web collaborative platform aiming to help incident responders sharing technical details during investigations. 

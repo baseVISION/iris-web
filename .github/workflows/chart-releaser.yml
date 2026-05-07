@@ -3,7 +3,7 @@ name: Release Iris Web Helm Chart
 on:
   push:
     branches:
-      - main
+      - bv-main
   workflow_dispatch:
 
 jobs:

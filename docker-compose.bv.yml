@@ -54,6 +54,7 @@ services:
     ports: []
     volumes:
       - ./source/app:/iriswebapp/app:z
+      - ./ui/dist:/iriswebapp/static:z
     depends_on:
       db:
         condition: service_healthy

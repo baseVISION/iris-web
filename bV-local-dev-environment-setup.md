@@ -56,12 +56,36 @@ podman compose -f docker-compose.bv.yml -p iris-bv up -d
 # Stop (data is preserved in iris-bv_db_data volume)
 podman compose -f docker-compose.bv.yml -p iris-bv down
 
-# Rebuild after code changes
+# Rebuild after code changes (Python backend or Dockerfile changes)
 podman compose -f docker-compose.bv.yml -p iris-bv up -d --build
 
 # View logs
 podman compose -f docker-compose.bv.yml -p iris-bv logs -f bv-iriswebapp-app
 ```
+
+---
+
+## Working on UI (JavaScript/Svelte) changes
+
+The `ui/dist` folder is bind-mounted into the container at `/iriswebapp/static`, so you can
+iterate on UI changes without rebuilding the container image.
+
+**First time only** — install Node dependencies on your host:
+```bash
+cd ui
+npm install
+```
+
+**On every UI change:**
+```bash
+cd ui
+npm run build
+```
+Then hard-refresh the browser (Ctrl+Shift+R). No container restart needed.
+
+> **Note:** `npm install` is only needed on your host for local builds. The container image
+> runs its own `npm ci` + `npm run build` during `docker build`, so a full `--build` always
+> produces a self-contained image regardless of your local `node_modules`.
 
 ---
 

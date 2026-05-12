@@ -59,6 +59,9 @@ podman compose -f docker-compose.bv.yml -p iris-bv down
 # Rebuild after code changes (Python backend or Dockerfile changes)
 podman compose -f docker-compose.bv.yml -p iris-bv up -d --build
 
+# Restart app after Python file changes (always restart nginx too — it caches the app's IP)
+podman restart bv-iriswebapp-app bv-iriswebapp-nginx
+
 # View logs
 podman compose -f docker-compose.bv.yml -p iris-bv logs -f bv-iriswebapp-app
 ```

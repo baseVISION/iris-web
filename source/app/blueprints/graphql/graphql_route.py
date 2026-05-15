@@ -22,7 +22,7 @@ from flask import request
 from flask_wtf import FlaskForm
 from flask import Blueprint
 
-from graphql_server.flask import GraphQLView
+from graphql_server.flask.views import GraphQLView
 from graphene import ObjectType
 from graphene import Schema
 from graphene import Float
@@ -119,7 +119,7 @@ def _check_authentication_wrapper(f):
 
 def _create_blueprint():
     schema = Schema(query=Query, mutation=Mutation)
-    graphql_view = GraphQLView.as_view('graphql', schema=schema)
+    graphql_view = GraphQLView.as_view('graphql', schema=schema.graphql_schema)
     graphql_view_with_authentication = _check_authentication_wrapper(graphql_view)
 
     blueprint = Blueprint('graphql', __name__)

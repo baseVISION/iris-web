@@ -51,7 +51,8 @@ services:
       context: .
       dockerfile: docker/webApp/Dockerfile
     image: bv-iriswebapp-app:develop
-    ports: []
+    ports:
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./source/app:/iriswebapp/app:z
       - ./ui/dist:/iriswebapp/static:z

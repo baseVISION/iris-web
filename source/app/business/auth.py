@@ -16,7 +16,7 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-from urllib.parse import urlparse
+from urllib.parse import urlsplit
 
 from flask import session
 from flask import redirect
@@ -92,12 +92,30 @@ def validate_local_login(username: str, password: str):
 
 def _is_safe_url(target):
     """
-    Check whether the target URL is safe for redirection by ensuring that it is a relative URL
-    (i.e., does not specify a scheme or netloc).
+    Check whether the target URL is safe for redirection.
+
+    The previous check using urlparse(target).netloc failed to reject payloads
+    like 'attacker.com?cid=1': urlsplit treats that as a path with an empty
+    netloc, but browsers resolving a 'Location: attacker.com' header route the
+    user to the attacker's host — an Open Redirect (GHSA-vjc3-7jwv-j9qf,
+    SBA-ADV-20260126-02, CWE-601).
+
+    A safe redirect target is a *relative* path on this application:
+    - must be a non-empty string
+    - no control characters or backslashes (browsers may normalise '\\' -> '/')
+    - must start with '/' but not '//' (rules out protocol-relative URLs)
+    - urlsplit must confirm no scheme and no netloc (defence-in-depth)
     """
-    # Remove backslashes to mitigate obfuscation
-    target = target.replace('\\', '')
-    parsed = urlparse(target)
+    if not target or not isinstance(target, str):
+        return False
+    # Reject control chars (incl. tab/newline) and backslashes outright.
+    if any(ord(c) < 0x20 or c == '\\' for c in target):
+        return False
+    # Must be a site-relative path: starts with '/' but not '//'.
+    if not target.startswith('/') or target.startswith('//'):
+        return False
+    # Defence-in-depth: urlsplit must confirm no scheme and no netloc.
+    parsed = urlsplit(target)
     return not parsed.scheme and not parsed.netloc
 
 
@@ -108,8 +126,6 @@ def _filter_next_url(next_url, context_case):
     """
     if not next_url:
         return url_for('index.index', cid=context_case)
-    # Remove backslashes to mitigate obfuscation
-    next_url = next_url.replace('\\', '')
     if _is_safe_url(next_url):
         return next_url
     return url_for('index.index', cid=context_case)

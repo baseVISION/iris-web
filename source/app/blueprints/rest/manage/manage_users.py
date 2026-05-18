@@ -155,7 +155,7 @@ def add_user():
 
         udata = user_schema.dump(user)
         udata['user_api_key'] = user.api_key
-        del udata['user_password']
+        udata.pop('user_password', None)
 
         if cuser:
             track_activity(f"created user {user.user}", ctx_less=True)

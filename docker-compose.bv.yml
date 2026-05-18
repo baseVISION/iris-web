@@ -99,6 +99,8 @@ services:
         NGINX_CONF_GID: 1234
         NGINX_CONF_FILE: ${NGINX_CONF_FILE:-nginx.conf}
     image: bv-iriswebapp-nginx:develop
+    security_opt:
+      - "label=disable"
     volumes:
       - "./certificates/web_certificates/:/www/certs/:z"
     depends_on:

@@ -253,7 +253,7 @@ class UserSchema(ma.SQLAlchemyAutoSchema):
     user_name: str = auto_field('name', required=True, validate=Length(min=2))
     user_login: str = auto_field('user', required=True, validate=Length(min=2))
     user_email: str = auto_field('email', required=True, validate=Length(min=2))
-    user_password: Optional[str] = auto_field('password', required=False)
+    user_password: Optional[str] = auto_field('password', required=False, load_only=True)
     user_isadmin: bool = fields.Boolean(required=True)
     user_id: Optional[int] = fields.Integer(required=False)
     user_primary_organisation_id: Optional[int] = fields.Integer(required=False)
@@ -263,7 +263,8 @@ class UserSchema(ma.SQLAlchemyAutoSchema):
         model = User
         load_instance = True
         include_fk = True
-        exclude = ['api_key', 'password', 'ctx_case', 'ctx_human_case', 'user', 'name', 'email', 'is_service_account']
+        exclude = ['api_key', 'password', 'ctx_case', 'ctx_human_case', 'user', 'name', 'email',
+                   'is_service_account', 'mfa_secrets', 'webauthn_credentials']
         unknown = EXCLUDE
 
     @pre_load()
@@ -1128,7 +1129,7 @@ class UserFullSchema(ma.SQLAlchemyAutoSchema):
         model = User
         load_instance = True
         include_fk = True
-        exclude = ['password', 'ctx_case', 'ctx_human_case']
+        exclude = ['password', 'ctx_case', 'ctx_human_case', 'mfa_secrets', 'webauthn_credentials']
         unknown = EXCLUDE
 
 
@@ -1323,6 +1324,9 @@ class DSFileSchema(ma.SQLAlchemyAutoSchema):
         include_fk = True
         load_instance = True
         unknown = EXCLUDE
+        # file_local_name is an internal server path — never serialise it to
+        # clients (CWE-201 / SBA-ADV-20260126-04, GHSA-g588-7wmg-2pqp).
+        exclude = ['file_local_name']
 
     def ds_store_file_b64(self, filename: str, file_content: bytes, dsp: DataStorePath, cid: int) -> Tuple[
         DataStoreFile, bool]:

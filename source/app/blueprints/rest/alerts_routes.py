@@ -66,6 +66,24 @@ from app.business.alerts import alerts_get_related
 
 alerts_rest_blueprint = Blueprint('alerts_rest', __name__)
 
+# Fields that must be immutable on alert update.  Allowing them via the API
+# lets a user with write access to one customer re-attribute an alert to a
+# customer they cannot see — planting fake alerts or (with an XSS vector)
+# making another user move an alert into an attacker-controlled customer.
+# See SBA-ADV-20260128-05 / CWE-863.
+_ALERT_UPDATE_READONLY_FIELDS = frozenset({
+    'alert_id',            # primary key, must not be rewritten
+    'alert_customer_id',   # ownership — re-attribution bypasses customer ACL
+    'alert_creation_time', # audit integrity; set once at creation
+})
+
+
+def _strip_readonly_update_fields(payload):
+    """Remove fields that must never be mutated via the alert-update API."""
+    if not isinstance(payload, dict):
+        return payload
+    return {k: v for k, v in payload.items() if k not in _ALERT_UPDATE_READONLY_FIELDS}
+
 
 def _load(request_data, **kwargs):
     alert_schema = AlertSchema()
@@ -332,8 +350,9 @@ def alerts_update_route(alert_id) -> Response:
     do_status_hook = False
 
     try:
-        # Load the JSON data from the request
-        data = request.get_json()
+        # Load the JSON data from the request. Drop fields the caller must not
+        # be allowed to change (SBA-ADV-20260128-05 / CWE-863).
+        data = _strip_readonly_update_fields(request.get_json())
 
         activity_data = []
         for key, value in data.items():
@@ -413,7 +432,7 @@ def alerts_batch_update_route() -> Response:
 
     # Get the list of alert IDs and updates from the request data
     alert_ids: List[int] = data.get('alert_ids', [])
-    updates = data.get('updates', {})
+    updates = _strip_readonly_update_fields(data.get('updates', {}))
 
     if not updates.get('alert_tags'):
         updates.pop('alert_tags', None)
@@ -1019,7 +1038,7 @@ def alert_comment_edit(alert_id, com_id):
     if not ac_current_user_has_customer_access(alert.alert_customer_id):
         return response_error('User not entitled to read alerts for the client', status=403)
 
-    return case_comment_update(com_id, 'events', None)
+    return case_comment_update(com_id, 'alerts', None)
 
 
 @alerts_rest_blueprint.route('/alerts/<int:alert_id>/comments/add', methods=['POST'])

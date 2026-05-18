@@ -54,6 +54,25 @@ from app.blueprints.responses import response_success
 
 datastore_rest_blueprint = Blueprint('datastore_rest', __name__)
 
+# Allowlist of form fields accepted for file add / update operations.
+# Restricting to this set prevents a caller from injecting arbitrary model
+# columns (e.g. file_local_name, file_sha256, file_size) through the
+# multipart form payload — closing a path-traversal / data-integrity vector
+# (SBA-ADV-20260128-06, CWE-22 / GHSA-qhqj-vm56-4phr).
+_DS_FILE_FORM_FIELDS = frozenset({
+    'file_original_name',
+    'file_description',
+    'file_password',
+    'file_is_ioc',
+    'file_is_evidence',
+    'file_parent_id',
+})
+
+
+def _filter_ds_form_fields(form):
+    """Return a plain dict with only the allowed datastore form fields."""
+    return {k: v for k, v in form.items() if k in _DS_FILE_FORM_FIELDS}
+
 
 @datastore_rest_blueprint.route('/datastore/list/tree', methods=['GET'])
 @ac_requires_case_identifier(CaseAccessLevel.read_only, CaseAccessLevel.full_access)
@@ -114,7 +133,7 @@ def datastore_update_file(cur_id: int, caseid: int):
     dsf_schema = DSFileSchema()
     try:
 
-        dsf_sc = dsf_schema.load(request.form, instance=dsf, partial=True)
+        dsf_sc = dsf_schema.load(_filter_ds_form_fields(request.form), instance=dsf, partial=True)
         add_obj_history_entry(dsf_sc, 'updated')
 
         dsf.file_is_ioc = request.form.get('file_is_ioc') is not None or request.form.get('file_is_ioc') is True
@@ -236,7 +255,7 @@ def datastore_add_file(cur_id: int, caseid: int):
     dsf_schema = DSFileSchema()
     try:
 
-        dsf_sc = dsf_schema.load(request.form, partial=True)
+        dsf_sc = dsf_schema.load(_filter_ds_form_fields(request.form), partial=True)
 
         dsf_sc.file_parent_id = dsp.path_id
         dsf_sc.added_by_user_id = iris_current_user.id

@@ -284,6 +284,7 @@ def ac_trace_effective_user_permissions(user_id):
     return perms
 
 
+
 def ac_recompute_effective_ac_from_users_list(users_list):
     """
     Recompute all users effective access of users
@@ -358,7 +359,7 @@ def ac_set_new_case_access(user, case_id, customer_id):
     users_full = User.query.with_entities(User.id).all()
     users_full_access = list(set([u.id for u in users_full]) - set(users.keys()))
 
-    # Default users case access - Full access
+    # Default users case access - deny all
     add_several_user_effective_access(users_full_access, case_id, CaseAccessLevel.deny_all.value)
 
     set_user_case_access(user, case_id)
@@ -368,6 +369,8 @@ def ac_set_new_case_access(user, case_id, customer_id):
     # Add customer permissions for all users belonging to the customer
     if customer_id:
         users_client = get_user_access_levels_by_customer(customer_id)
+        # Remove users already added via auto-follow groups
+        users_client = [u for u in users_client if u.user_id not in users.keys()]
         users_map = {u.user_id: u.access_level for u in users_client}
         ac_add_user_effective_access_from_map(users_map, case_id)
 
@@ -397,6 +400,7 @@ def set_user_case_access(user, case_id):
     uca.access_level = CaseAccessLevel.full_access.value
     db.session.add(uca)
     db.session.commit()
+
 
 
 def ac_apply_autofollow_groups_access(case_id):
@@ -605,11 +609,11 @@ def ac_get_user_cases_access(user_id):
     for oca in cases:
         effective_cases_access[oca.case_id] = CaseAccessLevel.deny_all.value
 
-    for gca in gcas:
-        effective_cases_access[gca.case_id] = gca.access_level
-
     for cca in ccas:
         effective_cases_access[cca.case_id] = cca.access_level
+
+    for gca in gcas:
+        effective_cases_access[gca.case_id] = gca.access_level
 
     for uca in ucas:
         effective_cases_access[uca.case_id] = uca.access_level
@@ -696,36 +700,6 @@ def ac_trace_user_effective_cases_access_2(user_id):
 
         effective_cases_access[oca.case_id]['user_access'].append(access)
 
-    # Group case access
-    for gca in gcas:
-        access = {
-            'state': 'Effective',
-            'access_list': ac_access_level_to_list(gca.access_level),
-            'access_value': gca.access_level,
-            'inherited_from': {
-                'object_type': 'group_access_level',
-                'object_name': gca.group_name,
-                'object_id': gca.group_id,
-                'object_uuid': gca.group_uuid
-            }
-        }
-
-        if gca.case_id in effective_cases_access:
-            effective_cases_access[gca.case_id]['user_effective_access'] = ac_access_level_to_list(gca.access_level)
-            for kec in effective_cases_access[gca.case_id]['user_access']:
-                kec['state'] = f'Overwritten by group {gca.group_name}'
-
-        else:
-            effective_cases_access[gca.case_id] = {
-                'case_info': {
-                    'case_name': gca.name,
-                    'case_id': gca.case_id
-                },
-                'user_access': [],
-                'user_effective_access': ac_access_level_to_list(gca.access_level)
-            }
-
-        effective_cases_access[gca.case_id]['user_access'].append(access)
 
     # Client case access:
     for cca in ccas:
@@ -757,6 +731,37 @@ def ac_trace_user_effective_cases_access_2(user_id):
             }
 
         effective_cases_access[cca.case_id]['user_access'].append(access)
+
+    # Group case access
+    for gca in gcas:
+        access = {
+            'state': 'Effective',
+            'access_list': ac_access_level_to_list(gca.access_level),
+            'access_value': gca.access_level,
+            'inherited_from': {
+                'object_type': 'group_access_level',
+                'object_name': gca.group_name,
+                'object_id': gca.group_id,
+                'object_uuid': gca.group_uuid
+            }
+        }
+
+        if gca.case_id in effective_cases_access:
+            effective_cases_access[gca.case_id]['user_effective_access'] = gca.access_level
+            for kec in effective_cases_access[gca.case_id]['user_access']:
+                kec['state'] = f'Overwritten by group {gca.group_name}'
+
+        else:
+            effective_cases_access[gca.case_id] = {
+                'case_info': {
+                    'case_name': gca.name,
+                    'case_id': gca.case_id
+                },
+                'user_access': [],
+                'user_effective_access': gca.access_level
+            }
+
+        effective_cases_access[gca.case_id]['user_access'].append(access)
 
     # User case access
     for uca in ucas:

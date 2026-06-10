@@ -17,6 +17,8 @@
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 import os
+import bleach
+from markupsafe import Markup
 from flask import Flask
 from flask import g
 from flask import session
@@ -88,7 +90,37 @@ def ac_current_user_has_manage_perms():
     return False
 
 
+# Allowlist for user-defined HTML custom attributes. Matches the frontend
+# do_md_filter_xss() allowlist closely so behavior is consistent across sinks.
+# Explicitly excludes script / iframe / event handlers / javascript: URLs.
+_ATTR_HTML_ALLOWED_TAGS = [
+    'a', 'abbr', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'h1', 'h2', 'h3',
+    'h4', 'h5', 'h6', 'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 'span', 'strong',
+    'table', 'tbody', 'td', 'th', 'thead', 'tr', 'ul',
+]
+_ATTR_HTML_ALLOWED_ATTRS = {
+    '*': ['class', 'title'],
+    'a': ['href', 'title', 'target', 'rel'],
+    'img': ['src', 'alt', 'title', 'width', 'height'],
+}
+_ATTR_HTML_ALLOWED_PROTOCOLS = ['http', 'https', 'mailto']
+
+
+def _sanitize_attribute_html(value):
+    if value is None:
+        return ''
+    cleaned = bleach.clean(
+        str(value),
+        tags=_ATTR_HTML_ALLOWED_TAGS,
+        attributes=_ATTR_HTML_ALLOWED_ATTRS,
+        protocols=_ATTR_HTML_ALLOWED_PROTOCOLS,
+        strip=True,
+    )
+    return Markup(cleaned)
+
+
 register_jinja_filters(app.jinja_env)
+app.jinja_env.filters['sanitize_attribute_html'] = _sanitize_attribute_html
 
 app.jinja_env.globals.update(user_has_perm=ac_current_user_has_permission)
 app.jinja_env.globals.update(user_has_manage_perms=ac_current_user_has_manage_perms)

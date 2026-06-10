@@ -57,6 +57,32 @@ manage_users_rest_blueprint = Blueprint('manage_users_rest', __name__)
 
 log = app.logger
 
+# Allowlist of fields an administrator may supply when creating or updating a
+# user. Anything else the caller tries to include (id, uuid, mfa_secrets,
+# webauthn_credentials, mfa_setup_complete, api_key, external_id, …) is
+# silently dropped before the schema is loaded, closing the mass-assignment
+# vector reported as GHSA-w78h-2m23-widh / SBA-ADV-20260128-01 / CWE-915.
+_ADMIN_USER_WRITABLE_FIELDS = frozenset({
+    'csrf_token',
+    'user_id',                        # route explicitly sets this to 0 or the URL param
+    'user_name',
+    'user_login',
+    'user_email',
+    'user_password',
+    'user_isadmin',
+    'user_is_service_account',
+    'user_primary_organisation_id',
+    'user_roles_str',
+    'active',
+})
+
+
+def _filter_admin_user_payload(jsdata):
+    """Strip any fields not in _ADMIN_USER_WRITABLE_FIELDS before schema load."""
+    if not isinstance(jsdata, dict):
+        return {}
+    return {k: v for k, v in jsdata.items() if k in _ADMIN_USER_WRITABLE_FIELDS}
+
 
 @manage_users_rest_blueprint.route('/manage/users/list', methods=['GET'])
 @ac_api_requires(Permissions.server_administrator)
@@ -116,7 +142,7 @@ def add_user():
 
         # validate before saving
         user_schema = UserSchema()
-        jsdata = request.get_json()
+        jsdata = _filter_admin_user_payload(request.get_json())
         jsdata['user_id'] = 0
         jsdata['active'] = jsdata.get('active', True)
         cuser = user_schema.load(jsdata, partial=True)
@@ -129,7 +155,7 @@ def add_user():
 
         udata = user_schema.dump(user)
         udata['user_api_key'] = user.api_key
-        del udata['user_password']
+        udata.pop('user_password', None)
 
         if cuser:
             track_activity(f"created user {user.user}", ctx_less=True)
@@ -312,7 +338,7 @@ def update_user_api(cur_id):
 
         # validate before saving
         user_schema = UserSchema()
-        jsdata = request.get_json()
+        jsdata = _filter_admin_user_payload(request.get_json())
         jsdata['user_id'] = cur_id
         cuser = user_schema.load(jsdata, instance=user, partial=True)
         update_user(user, password=jsdata.get('user_password'))

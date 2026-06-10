@@ -51,9 +51,11 @@ services:
       context: .
       dockerfile: docker/webApp/Dockerfile
     image: bv-iriswebapp-app:develop
-    ports: []
+    ports:
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./source/app:/iriswebapp/app:z
+      - ./ui/dist:/iriswebapp/static:z
     depends_on:
       db:
         condition: service_healthy
@@ -98,6 +100,8 @@ services:
         NGINX_CONF_GID: 1234
         NGINX_CONF_FILE: ${NGINX_CONF_FILE:-nginx.conf}
     image: bv-iriswebapp-nginx:develop
+    security_opt:
+      - "label=disable"
     volumes:
       - "./certificates/web_certificates/:/www/certs/:z"
     depends_on:
@@ -107,7 +111,7 @@ services:
         condition: service_healthy
 
   frontend:
-    image: node:23-alpine
+    image: node:24-alpine
     profiles: ["new-ui"]
     container_name: iris_sveltekit_frontend
     working_dir: /app

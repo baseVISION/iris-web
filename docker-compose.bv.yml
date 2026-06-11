@@ -89,6 +89,44 @@ services:
       start_period: 60s
       start_interval: 1s
 
+  collab:
+    image: bv-iriswebapp-app:develop
+    container_name: bv-iriswebapp-collab
+    command: ["uvicorn", "app.collab_server:app", "--host", "0.0.0.0", "--port", "5001"]
+    env_file:
+      - .env
+    environment:
+      - LOG_LEVEL
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_ADMIN_USER
+      - POSTGRES_ADMIN_PASSWORD
+      - POSTGRES_SERVER
+      - POSTGRES_PORT
+      - IRIS_SECRET_KEY
+      - IRIS_SECURITY_PASSWORD_SALT
+      - IRIS_COLLAB_STORE_PATH=/home/iris/server_data/collab
+    volumes:
+      - ./source/app:/iriswebapp/app:z
+      - ./certificates/:/home/iris/certificates/:ro
+      - ./certificates/ldap/:/iriswebapp/certificates/ldap/:ro
+      - server_data:/home/iris/server_data
+    expose:
+      - "5001"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - iris_backend
+      - iris_frontend
+    healthcheck:
+      test: >
+        python -c "import urllib.request;
+        urllib.request.urlopen('http://localhost:5001/healthz', timeout=5).read()"
+        || exit 1
+      start_period: 60s
+      start_interval: 1s
+
   nginx:
     extends:
       file: docker-compose.base.yml
@@ -108,6 +146,8 @@ services:
       app:
         condition: service_healthy
       worker:
+        condition: service_healthy
+      collab:
         condition: service_healthy
 
   frontend:

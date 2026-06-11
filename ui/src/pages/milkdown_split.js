@@ -1,6 +1,6 @@
 import { basicSetup } from 'codemirror';
 import { markdown } from '@codemirror/lang-markdown';
-import { EditorState, Transaction } from '@codemirror/state';
+import { EditorSelection, EditorState, Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 
 const SOURCE_SYNC_MS = 250;
@@ -130,13 +130,24 @@ class SplitEditor {
     }
 
     handleMilkdownChange(md) {
-        if (this.origin === 'source' || !this.sourceView) {
+        const markdown = md || '';
+        if (!this.sourceView) {
             return;
         }
+
+        if (
+            this.origin === 'source' ||
+            this.isSourceFocused() ||
+            this.sourceView.state.doc.toString() === markdown
+        ) {
+            this.emitChange(markdown);
+            return;
+        }
+
         this.origin = 'milkdown';
-        this.replaceSourceDoc(md || '');
+        this.replaceSourceDoc(markdown);
         this.origin = null;
-        this.emitChange(md || '');
+        this.emitChange(markdown);
     }
 
     applyPendingSource() {
@@ -155,14 +166,37 @@ class SplitEditor {
         if (!this.sourceView) {
             return;
         }
+
+        const scrollTop = this.sourceView.scrollDOM.scrollTop;
+        const selection = this.sourceView.state.selection;
+        const docLength = (md || '').length;
+        const clampPosition = (pos) => Math.min(Math.max(pos, 0), docLength);
+        const ranges = selection.ranges.map((range) => EditorSelection.range(
+            clampPosition(range.anchor),
+            clampPosition(range.head)
+        ));
+
         this.sourceView.dispatch({
             changes: {
                 from: 0,
                 to: this.sourceView.state.doc.length,
                 insert: md || '',
             },
+            selection: EditorSelection.create(ranges, selection.mainIndex),
             annotations: Transaction.addToHistory.of(false),
         });
+        this.sourceView.scrollDOM.scrollTop = scrollTop;
+    }
+
+    isSourceFocused() {
+        if (!this.sourceView) {
+            return false;
+        }
+        if (this.sourceView.hasFocus) {
+            return true;
+        }
+        const sourceRoot = document.getElementById('note_source') || this.sourcePane;
+        return !!(sourceRoot && sourceRoot.contains(document.activeElement));
     }
 
     emitChange(md) {

@@ -63,6 +63,10 @@
     width: 100%;
     flex: 1 1 auto;
     min-height: 480px;
+    /* Cap the split editor to the viewport so each pane scrolls internally
+       instead of pushing the whole page. 200px accounts for the fixed header,
+       content margin, title row and a small bottom margin. */
+    max-height: calc(100vh - 200px);
     overflow: hidden;
     position: relative;
 }
@@ -136,6 +140,16 @@
 
 .note-body[data-theme="dark"] #note_source.iris-split-pane.is-active {
     background: #1f283e;
+}
+
+/* Source mount: make the CodeMirror root fill the pane so the scroller
+   (overflow:auto) engages instead of growing the pane. */
+#note_source.iris-split-pane .iris-split-source {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 /* CodeMirror 6 root */
@@ -270,6 +284,22 @@
 
 .note-body[data-theme="dark"] #milkdown_root.iris-split-pane.is-active {
     background: #171d2b;
+}
+
+/* Preview mount: make Crepe's generated .milkdown wrapper fill the pane and
+   scroll its own content independently of the source pane. */
+#milkdown_root.iris-split-pane .iris-split-preview {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+#milkdown_root.iris-split-pane .iris-split-preview .milkdown {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 /* Crepe variable overrides for dark mode inside the split (playground-style) */

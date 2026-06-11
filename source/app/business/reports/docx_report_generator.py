@@ -10,12 +10,20 @@ import logging
 import os
 import re
 import zipfile
+from functools import lru_cache
 from typing import Dict, List
 
 from docxtpl import DocxTemplate
 from jinja2 import Environment
 from lxml import etree
 
+from pygments import lex
+from pygments.lexers import get_lexer_by_name, guess_lexer
+from pygments.styles import get_style_by_name
+from pygments.token import Text, Whitespace
+from pygments.util import ClassNotFound
+
+from docx_generator.adapters.docx.docx_adapter import make_paragraph, make_run
 from docx_generator.adapters.docx.style_adapter import get_document_render_styles
 from docx_generator.adapters.mistletoe.DocxRenderer import DocxRenderer
 from docx_generator.docx_generator import DocxGenerator
@@ -30,6 +38,99 @@ DRAWING_RE = re.compile(r'<w:drawing(?:\s[^>]*)?>.*?</w:drawing>', re.DOTALL)
 
 WORD_TEXT_NS = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
 WORD_XML_PART_RE = re.compile(r'^word/(?:document|header\d+|footer\d+|footnotes|endnotes)\.xml$')
+
+_W_NS = WORD_TEXT_NS['w']
+_W = '{%s}' % _W_NS
+
+# Schema order of children inside <w:rPr> (CT_RPr). Word usually tolerates loose order,
+# but inserting <w:color> deterministically avoids validator surprises.
+_RPR_ORDER = [
+    'rStyle', 'rFonts', 'b', 'bCs', 'i', 'iCs', 'caps', 'smallCaps',
+    'strike', 'dstrike', 'outline', 'shadow', 'emboss', 'imprint',
+    'noProof', 'snapToGrid', 'vanish', 'webHidden', 'color', 'spacing',
+    'w', 'kern', 'position', 'sz', 'szCs', 'highlight', 'u', 'effect',
+    'bdr', 'shd', 'fitText', 'vertAlign', 'rtl', 'cs', 'em', 'lang',
+    'eastAsianLayout', 'specVanish', 'oMath',
+]
+_COLOR_POS = _RPR_ORDER.index('color')
+
+# Above this size, skip syntax highlighting (run explosion / perf) and render plain.
+_MAX_CODE_HIGHLIGHT_CHARS = 50000
+
+
+@lru_cache(maxsize=1)
+def _pygments_style():
+    # 'default' is always available and readable on a white Word page.
+    return get_style_by_name('default')
+
+
+@lru_cache(maxsize=512)
+def _token_color(ttype):
+    # Plain text / whitespace inherit the code paragraph's default (grey); only "interesting"
+    # tokens (keywords, strings, comments, ...) get an explicit colour.
+    if ttype in Text or ttype in Whitespace:
+        return None
+    color = _pygments_style().style_for_token(ttype).get('color')
+    return color.upper() if color else None
+
+
+def _rpr_sort_index(element):
+    try:
+        return _RPR_ORDER.index(etree.QName(element).localname)
+    except ValueError:
+        return len(_RPR_ORDER)
+
+
+def _rpr_with_color(base_rpr, color):
+    """Return a <w:rPr> string based on base_rpr (the monospace inline-code run props) with
+    any existing <w:color> removed and `color` (RRGGBB or None) inserted in schema-safe order."""
+    xml = (base_rpr or '').strip()
+    if not xml:
+        xml = '<w:rPr/>'
+    elif '<w:rPr' not in xml:
+        xml = '<w:rPr>{}</w:rPr>'.format(xml)
+
+    wrapper = etree.fromstring('<root xmlns:w="{}">{}</root>'.format(_W_NS, xml).encode('utf-8'))
+    rpr = wrapper.find(_W + 'rPr')
+    if rpr is None:
+        rpr = etree.SubElement(wrapper, _W + 'rPr')
+
+    for child in list(rpr):
+        if etree.QName(child).localname == 'color':
+            rpr.remove(child)
+
+    if color:
+        color_el = etree.Element(_W + 'color')
+        color_el.set(_W + 'val', color)
+        insert_at = len(rpr)
+        for idx, child in enumerate(rpr):
+            if _rpr_sort_index(child) > _COLOR_POS:
+                insert_at = idx
+                break
+        rpr.insert(insert_at, color_el)
+
+    return etree.tostring(rpr, encoding='unicode', with_tail=False)
+
+
+def _code_text(token):
+    if getattr(token, 'children', None):
+        return token.children[0].content
+    return getattr(token, 'content', '')
+
+
+def _lexer_for_code(language, code):
+    if language:
+        try:
+            return get_lexer_by_name(language, stripnl=False, ensurenl=False)
+        except ClassNotFound:
+            return None
+    # Only guess for reasonably small unlabelled blocks (guessing is slow and error-prone).
+    if code and len(code) <= 20000:
+        try:
+            return guess_lexer(code, stripnl=False, ensurenl=False)
+        except ClassNotFound:
+            return None
+    return None
 
 
 class MarkdownAwareDocxTemplate(DocxTemplate):
@@ -51,7 +152,56 @@ class MarkdownAwareDocxTemplate(DocxTemplate):
 
 
 class MarkdownImageDocxRenderer(DocxRenderer):
-    """Renderer that emits markdown images as inline drawing runs."""
+    """Renderer that emits markdown images as inline drawing runs and syntax-highlights code."""
+
+    def render_block_code(self, token):
+        """Syntax-highlight fenced code blocks: lex with Pygments and emit one coloured run
+        per token (adjacent same-colour tokens merged). Falls back to the default single
+        grey run when there is no usable lexer or no colour was produced. Output stays
+        Word-valid (text-only <w:t> leaves)."""
+        code = _code_text(token).replace('\r\n', '\n').replace('\r', '\n')
+        if code.endswith('\n'):
+            code = code[:-1]   # drop the fence's trailing newline -> no spurious blank line
+        code = code.expandtabs(4)   # make_run has no <w:tab/>; spaces keep indentation
+
+        if len(code) > _MAX_CODE_HIGHLIGHT_CHARS:
+            return super().render_block_code(token)
+
+        lexer = _lexer_for_code(getattr(token, 'language', None), code)
+        if lexer is None:
+            return super().render_block_code(token)
+
+        runs = []
+        rpr_by_color = {}
+        has_explicit_color = False
+        last_color = object()   # sentinel distinct from any real colour / None
+        pending = []
+
+        def rpr_for(color):
+            if color not in rpr_by_color:
+                rpr_by_color[color] = _rpr_with_color(self.style.inline_code, color)
+            return rpr_by_color[color]
+
+        def flush():
+            if pending:
+                runs.append(make_run(rpr_for(last_color), ''.join(pending)))
+                pending.clear()
+
+        for ttype, value in lex(code, lexer):
+            if not value:
+                continue
+            color = _token_color(ttype)
+            has_explicit_color = has_explicit_color or bool(color)
+            if color != last_color:
+                flush()
+                last_color = color
+            pending.append(value)
+        flush()
+
+        if not runs or not has_explicit_color:
+            return super().render_block_code(token)
+
+        return make_paragraph(self.style.code, ''.join(runs))
 
     def render_image(self, token):
         if self._image_handler is None:

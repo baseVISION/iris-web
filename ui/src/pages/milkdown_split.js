@@ -64,15 +64,17 @@ class SplitEditor {
         this.destroyed = false;
         this.cleanupFns = [];
         this.silentMarkdown = null;
+        this.collabActive = false;
     }
 
-    async create({ container, sourcePane, previewPane, divider, viewToggle, initialMarkdown = '', onChange }) {
+    async create({ container, sourcePane, previewPane, divider, viewToggle, initialMarkdown = '', onChange, collab = null }) {
         this.container = resolveRef(container);
         this.sourcePane = resolveRef(sourcePane);
         this.previewPane = resolveRef(previewPane);
         this.divider = resolveRef(divider);
         this.viewToggle = resolveRef(viewToggle);
         this.onChange = typeof onChange === 'function' ? onChange : null;
+        this.collabActive = !!collab;
 
         if (!this.container || !this.sourcePane || !this.previewPane) {
             throw new Error('Missing split editor root elements');
@@ -91,7 +93,7 @@ class SplitEditor {
 
         await window.IrisMilkdown.create(previewMount, initialMarkdown || '', (md) => {
             this.handleMilkdownChange(md);
-        });
+        }, { collab });
 
         if (this.destroyed) {
             await destroyMilkdownIfActive();
@@ -105,6 +107,8 @@ class SplitEditor {
                 extensions: [
                     basicSetup,
                     markdown(),
+                    EditorState.readOnly.of(this.collabActive),
+                    EditorView.editable.of(!this.collabActive),
                     EditorView.lineWrapping,
                     EditorView.updateListener.of((update) => this.handleSourceUpdate(update)),
                     EditorView.theme({
@@ -119,7 +123,7 @@ class SplitEditor {
     }
 
     handleSourceUpdate(update) {
-        if (!update.docChanged || this.origin === 'milkdown') {
+        if (!update.docChanged || this.origin === 'milkdown' || this.collabActive) {
             return;
         }
         this.pendingSourceMd = update.state.doc.toString();
@@ -164,6 +168,10 @@ class SplitEditor {
     }
 
     applyPendingSource() {
+        if (this.collabActive) {
+            this.pendingSourceMd = null;
+            return;
+        }
         if (this.pendingSourceMd === null || this.pendingSourceMd === undefined) {
             return;
         }
@@ -228,6 +236,17 @@ class SplitEditor {
     getMarkdown() {
         this.flush();
         return window.IrisMilkdown.getMarkdown() || '';
+    }
+
+    isCollabActive() {
+        return this.collabActive;
+    }
+
+    getCollabStatus() {
+        if (!this.collabActive || !window.IrisMilkdown || typeof window.IrisMilkdown.getCollabStatus !== 'function') {
+            return null;
+        }
+        return window.IrisMilkdown.getCollabStatus();
     }
 
     setMarkdown(md) {

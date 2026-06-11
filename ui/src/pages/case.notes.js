@@ -14,6 +14,54 @@ let timer = null;
 let timeout = 5000;
 let note_dirty = false;
 
+const NOTE_COLLAB_COLORS = [
+    '#0f766e',
+    '#2563eb',
+    '#7c3aed',
+    '#c2410c',
+    '#be123c',
+    '#047857',
+    '#4338ca',
+    '#b45309',
+    '#0369a1',
+    '#a21caf',
+];
+
+function hash_note_collab_string(value) {
+    let hash = 0;
+    const str = value || 'IRIS';
+    for (let i = 0; i < str.length; i += 1) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return Math.abs(hash);
+}
+
+function get_note_collab_user() {
+    let whoami = null;
+    if (typeof userWhoami !== 'undefined' && userWhoami) {
+        whoami = userWhoami;
+    } else {
+        try {
+            whoami = JSON.parse(sessionStorage.getItem('userWhoami'));
+        } catch (e) {
+            whoami = null;
+        }
+    }
+
+    const name = (whoami && (whoami.user_name || whoami.user_login))
+        || $('#current_username').text()
+        || 'IRIS user';
+    return {
+        name,
+        color: NOTE_COLLAB_COLORS[hash_note_collab_string(name) % NOTE_COLLAB_COLORS.length],
+    };
+}
+
+function is_note_collab_active() {
+    return !!(note_split && typeof note_split.isCollabActive === 'function' && note_split.isCollabActive());
+}
+
 
 const preventFormDefaultBehaviourOnSubmit = (event) => {
     event.preventDefault();
@@ -34,6 +82,7 @@ function Collaborator( session_id, n_id ) {
 
     this.collaboration_socket.on("save-note", function (data) {
         if (parseInt(data.note_id) !== parseInt(note_id)) return;
+        if (is_note_collab_active()) return;
         sync_note(note_id)
             .then(function () {
                 $("#content_last_saved_by").text("Last saved by " + data.last_saved);
@@ -99,6 +148,10 @@ async function get_remote_note(note_id) {
 }
 
 async function sync_note(node_id) {
+    if (is_note_collab_active()) {
+        return;
+    }
+
     // Get the remote note
     let remote_note = await get_remote_note(node_id);
     if (remote_note.status !== 'success') {
@@ -411,6 +464,13 @@ async function note_detail(id) {
                 viewToggle: document.querySelector('.iris-view-toggle'),
                 initialMarkdown: data.data.note_content,
                 onChange: mark_note_dirty,
+                collab: {
+                    room: 'note-' + data.data.note_id,
+                    user: get_note_collab_user(),
+                    onStatus: function(status) {
+                        $('#note_split').attr('data-collab-status', status || '');
+                    },
+                },
             });
 
             if (note_id !== target_note) {

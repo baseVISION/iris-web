@@ -9,6 +9,9 @@ import { languages } from '@codemirror/language-data';
 import { tags } from '@lezer/highlight';
 import { editorViewCtx, parserCtx } from '@milkdown/kit/core';
 import { Slice } from '@milkdown/kit/prose/model';
+import { collab, collabServiceCtx } from '@milkdown/plugin-collab';
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
 import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/frame.css';
 import '../lib/milkdown_overrides.css';
@@ -249,6 +252,47 @@ const kusto = LanguageDescription.of({
     support: new LanguageSupport(StreamLanguage.define(kqlParser)),
 });
 
+const COLLAB_COLORS = [
+    '#0f766e',
+    '#2563eb',
+    '#7c3aed',
+    '#c2410c',
+    '#be123c',
+    '#047857',
+    '#4338ca',
+    '#b45309',
+    '#0369a1',
+    '#a21caf',
+];
+
+function hashString(value) {
+    let hash = 0;
+    const str = value || 'IRIS';
+    for (let i = 0; i < str.length; i += 1) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return Math.abs(hash);
+}
+
+function normalizeCollabUser(user) {
+    const rawName = user && user.name ? String(user.name).trim() : '';
+    const name = rawName || 'IRIS user';
+    const rawColor = user && user.color ? String(user.color).trim() : '';
+    const color = /^#[0-9a-fA-F]{6}$/.test(rawColor)
+        ? rawColor
+        : COLLAB_COLORS[hashString(name) % COLLAB_COLORS.length];
+    return { name, color };
+}
+
+function getCollabServerUrl(config) {
+    if (config && config.serverUrl) {
+        return config.serverUrl;
+    }
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}/collab`;
+}
+
 // Run `fn` only on the parts of the markdown that are OUTSIDE fenced code blocks
 // (``` ... ``` or ~~~ ... ~~~). Inline code spans rarely contain image syntax and are
 // left alone for v1 simplicity.
@@ -356,6 +400,29 @@ function uploadThroughIris(file) {
 /* --------------------------------------------------------------------------- */
 let _crepe = null;
 let _onChange = null;
+let _collabState = null;
+let _collabStatus = null;
+
+function updateCollabStatus(status) {
+    _collabStatus = status || null;
+    if (_collabState && typeof _collabState.onStatus === 'function') {
+        try { _collabState.onStatus(_collabStatus); } catch (e) { /* noop */ }
+    }
+}
+
+function destroyCollabState() {
+    if (!_collabState) {
+        _collabStatus = null;
+        return;
+    }
+
+    const { service, provider, ydoc } = _collabState;
+    try { if (service) service.disconnect(); } catch (e) { /* noop */ }
+    try { if (provider) provider.destroy(); } catch (e) { /* noop */ }
+    try { if (ydoc) ydoc.destroy(); } catch (e) { /* noop */ }
+    _collabState = null;
+    updateCollabStatus(null);
+}
 
 window.IrisMilkdown = {
     irisToMilkdown,
@@ -363,9 +430,10 @@ window.IrisMilkdown = {
 
     // Mount Crepe into rootSelector with IRIS markdown. onChange(markdownInIrisForm) fires
     // (debounced by caller if desired) on edits.
-    async create(rootSelector, irisMarkdown, onChange) {
+    async create(rootSelector, irisMarkdown, onChange, options = {}) {
         await this.destroy();
         _onChange = typeof onChange === 'function' ? onChange : null;
+        const collabConfig = options && options.collab ? options.collab : null;
         // Build + create the editor locally and only publish it to `_crepe` once it is
         // fully created, so isActive()/getMarkdown() never see a half-initialised editor.
         const crepe = new Crepe({
@@ -380,8 +448,48 @@ window.IrisMilkdown = {
                 },
             },
         });
+
+        if (collabConfig) {
+            crepe.editor.use(collab);
+        }
+
         await crepe.create();
         _crepe = crepe;
+
+        if (collabConfig) {
+            const room = String(collabConfig.room || '').trim();
+            if (!room) {
+                throw new Error('Missing Milkdown collab room');
+            }
+
+            const ydoc = new Y.Doc();
+            const provider = new WebsocketProvider(getCollabServerUrl(collabConfig), room, ydoc);
+            const user = normalizeCollabUser(collabConfig.user);
+            provider.awareness.setLocalStateField('user', user);
+
+            let service = null;
+            _crepe.editor.action((ctx) => {
+                service = ctx.get(collabServiceCtx);
+            });
+
+            service
+                .bindDoc(ydoc)
+                .setAwareness(provider.awareness)
+                .connect()
+                .applyTemplate(irisToMilkdown(irisMarkdown || ''));
+
+            _collabState = {
+                room,
+                ydoc,
+                provider,
+                service,
+                onStatus: typeof collabConfig.onStatus === 'function' ? collabConfig.onStatus : null,
+            };
+
+            provider.on('status', ({ status }) => updateCollabStatus(status));
+            updateCollabStatus(provider.wsconnected ? 'connected' : 'connecting');
+        }
+
         if (_onChange) {
             _crepe.on((listener) => {
                 listener.markdownUpdated(() => {
@@ -425,7 +533,16 @@ window.IrisMilkdown = {
         return _crepe !== null;
     },
 
+    isCollabActive() {
+        return _collabState !== null;
+    },
+
+    getCollabStatus() {
+        return _collabStatus;
+    },
+
     async destroy() {
+        destroyCollabState();
         if (_crepe) {
             try { await _crepe.destroy(); } catch (e) { /* noop */ }
             _crepe = null;

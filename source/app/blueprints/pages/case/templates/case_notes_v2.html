@@ -108,13 +108,14 @@
 						  	</div>
 						</div>
 					</div>
-					<div class="note-body" data-theme="{% if current_user.in_dark_mode %}dark{% else %}light{% endif %}">
+					<div class="note-body">
+						<div class="iris-split-shell" data-theme="{% if current_user.in_dark_mode %}dark{% else %}light{% endif %}">
 						<div class="row mb-1 mt-3 ml-2 mr-2 align-items-center">
 							<div class="col">
 								<div class="iris-view-toggle" role="group" aria-label="Note editor view">
-									<button type="button" id="view_split" class="is-active" aria-pressed="true">Split</button>
-									<button type="button" id="view_source" aria-pressed="false">Source</button>
-									<button type="button" id="view_preview" aria-pressed="false">Preview</button>
+									<button type="button" id="view_split" data-view="split" class="is-active" aria-pressed="true">Split</button>
+									<button type="button" id="view_source" data-view="source" aria-pressed="false">Source</button>
+									<button type="button" id="view_preview" data-view="preview" aria-pressed="false">Preview</button>
 								</div>
 							</div>
 							<div class="col">
@@ -127,13 +128,14 @@
 							</div>
 						</div>
 						<div id="note_split" class="iris-split view-split">
-							<div id="note_source" class="iris-split-pane is-active">
+							<div id="note_source" class="iris-split-pane iris-split-source is-active">
 								<div class="iris-split-label">MARKDOWN</div>
 							</div>
 							<div id="note_divider" class="iris-split-divider" role="separator"></div>
-							<div id="milkdown_root" class="iris-split-pane">
+							<div id="milkdown_root" class="iris-split-pane iris-split-preview">
 								<div class="iris-split-label">PREVIEW</div>
 							</div>
+						</div>
 						</div>
 					</div>
 				</div>

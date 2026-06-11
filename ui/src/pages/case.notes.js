@@ -404,8 +404,11 @@ async function note_detail(id) {
 
             let target_note = id;
             note_split = await window.IrisSplitEditor.create({
-                milkdownRoot: '#milkdown_root',
-                sourceRoot: '#note_source',
+                container: '#note_split',
+                sourcePane: '#note_source',
+                previewPane: '#milkdown_root',
+                divider: '#note_divider',
+                viewToggle: document.querySelector('.iris-view-toggle'),
                 initialMarkdown: data.data.note_content,
                 onChange: mark_note_dirty,
             });

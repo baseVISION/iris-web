@@ -29,49 +29,37 @@
 /* ============================================================================
    IRIS Split-Pane Editor — UX / Visual Design
    ============================================================================
-   Scope: case-notes split editor only.
-   Do NOT use these rules outside .note-body (they are keyed off
-   .note-body[data-theme="dark"] and .note-body[data-theme="light"]).
-   Codex must render data-theme on .note-body via Jinja2 logic.
+   Scope: any split editor instance (notes full-page or summary card).
+   Theming is keyed off .iris-split-shell[data-theme] so it works everywhere.
    ============================================================================ */
 
-/* ---- Layout helpers: make the split editor fill available viewport height ---- */
+/* ---- Layout helpers: make the split editor fill available height ---------- */
 .page-content.note-content {
     display: flex;
     flex-direction: column;
 }
 
-.note-body:has(#note_split) {
+.iris-split-shell {
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
-}
-
-.note-body:has(#note_split) #noteContentScroll {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-    min-height: 0;
+    max-height: 600px;
 }
 
 /* ---- 1. Split container & panes ------------------------------------------ */
-#note_split.iris-split {
+.iris-split {
     display: flex;
     flex-direction: row;
     align-items: stretch;
     width: 100%;
     flex: 1 1 auto;
     min-height: 480px;
-    /* Cap the split editor to the viewport so each pane scrolls internally
-       instead of pushing the whole page. 200px accounts for the fixed header,
-       content margin, title row and a small bottom margin. */
-    max-height: calc(100vh - 200px);
     overflow: hidden;
     position: relative;
 }
 
-#note_split.iris-split > .iris-split-pane {
+.iris-split > .iris-split-pane {
     flex: 1 1 50%;
     min-width: 0;
     min-height: 0;
@@ -83,7 +71,7 @@
 }
 
 /* ---- 2. Draggable divider ------------------------------------------------- */
-#note_divider.iris-split-divider {
+.iris-split-divider {
     flex: 0 0 auto;
     width: 8px;
     cursor: col-resize;
@@ -95,7 +83,7 @@
     transition: none;
 }
 
-#note_divider.iris-split-divider::before {
+.iris-split-divider::before {
     content: "";
     position: absolute;
     left: 3px;
@@ -106,45 +94,45 @@
     transition: none;
 }
 
-#note_divider.iris-split-divider:hover::before,
-#note_divider.iris-split-divider.is-dragging::before {
+.iris-split-divider:hover::before,
+.iris-split-divider.is-dragging::before {
     background: rgba(127, 127, 127, 0.45);
 }
 
-#note_divider.iris-split-divider.is-dragging {
+.iris-split-divider.is-dragging {
     cursor: col-resize;
 }
 
 /* Disable pane transitions while dragging for instant feedback */
-#note_split.iris-split.is-resizing > .iris-split-pane {
+.iris-split.is-resizing > .iris-split-pane {
     transition: none;
 }
 
 /* ---- 3. Source pane (CodeMirror) — deeply scoped -------------------------- */
-/* ALL source-pane CodeMirror rules live under #note_source so they can never  */
-/* leak into Crepe's own code-block CodeMirror (.milkdown .milkdown-code-block  */
-/* .cm-editor).                                                                 */
+/* ALL source-pane CodeMirror rules live under .iris-split-pane.iris-split-source
+   so they can never leak into Crepe's own code-block CodeMirror
+   (.milkdown .milkdown-code-block .cm-editor).                           */
 
-#note_source.iris-split-pane {
+.iris-split-pane.iris-split-source {
     background: #ffffff;
 }
 
-.note-body[data-theme="dark"] #note_source.iris-split-pane {
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source {
     background: #1a2035;
 }
 
 /* Focus tint — shift bg one shade when this pane is active */
-.note-body[data-theme="light"] #note_source.iris-split-pane.is-active {
+.iris-split-shell[data-theme="light"] .iris-split-pane.iris-split-source.is-active {
     background: #f8f9fa;
 }
 
-.note-body[data-theme="dark"] #note_source.iris-split-pane.is-active {
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source.is-active {
     background: #1f283e;
 }
 
 /* Source mount: make the CodeMirror root fill the pane so the scroller
    (overflow:auto) engages instead of growing the pane. */
-#note_source.iris-split-pane .iris-split-source {
+.iris-split-pane.iris-split-source .iris-split-source-mount {
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
@@ -153,7 +141,7 @@
 }
 
 /* CodeMirror 6 root */
-#note_source.iris-split-pane .cm-editor {
+.iris-split-pane.iris-split-source .cm-editor {
     height: 100%;
     outline: none !important;
     font-family: 'Space Mono', Fira Code, Menlo, Monaco, 'Courier New', Courier, monospace;
@@ -162,28 +150,28 @@
     background: #ffffff;
 }
 
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-editor {
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-editor {
     background: #1a2035;
 }
 
-#note_source.iris-split-pane .cm-editor .cm-scroller {
+.iris-split-pane.iris-split-source .cm-editor .cm-scroller {
     overflow: auto;
 }
 
 /* Editable content area */
-#note_source.iris-split-pane .cm-content {
+.iris-split-pane.iris-split-source .cm-content {
     padding: 20px 24px;
     caret-color: #000;
     color: #2c2c2c;
 }
 
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-content {
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-content {
     caret-color: #aeafad;
     color: #cac7c7;
 }
 
 /* Gutter */
-#note_source.iris-split-pane .cm-gutters {
+.iris-split-pane.iris-split-source .cm-gutters {
     border-right: 1px solid rgba(0, 0, 0, 0.06);
     background: #f1f3f4;
     color: #9aa0a6;
@@ -191,104 +179,104 @@
     line-height: 1.6;
 }
 
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-gutters {
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-gutters {
     border-right-color: #2f374b;
     background: #121622;
     color: #5c6370;
 }
 
 /* Selection (same blue in both dark & light for consistency with Crepe) */
-#note_source.iris-split-pane .cm-selectionBackground {
+.iris-split-pane.iris-split-source .cm-selectionBackground {
     background: #add6ff;
 }
 
-#note_source.iris-split-pane .cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
+.iris-split-pane.iris-split-source .cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
     background: #add6ff;
 }
 
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-selectionBackground,
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-selectionBackground,
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
     background: #264f78;
 }
 
 /* Cursor */
-#note_source.iris-split-pane .cm-cursor {
+.iris-split-pane.iris-split-source .cm-cursor {
     border-left-color: #000;
     border-left-width: 2px;
 }
 
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-cursor {
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-cursor {
     border-left-color: #aeafad;
 }
 
 /* Active line */
-#note_source.iris-split-pane .cm-activeLine {
+.iris-split-pane.iris-split-source .cm-activeLine {
     background: rgba(0, 0, 0, 0.03);
 }
 
-#note_source.iris-split-pane .cm-activeLineGutter {
+.iris-split-pane.iris-split-source .cm-activeLineGutter {
     background: rgba(0, 0, 0, 0.03);
     color: #5f6368;
 }
 
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-activeLine {
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-activeLine {
     background: #1f283e;
 }
 
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-activeLineGutter {
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-activeLineGutter {
     background: #1f283e;
     color: #8b92a9;
 }
 
 /* ---- 4. CodeMirror token colours (light) ---------------------------------- */
-#note_source.iris-split-pane .cm-keyword       { color: #a626a4; }
-#note_source.iris-split-pane .cm-atom          { color: #986801; }
-#note_source.iris-split-pane .cm-number        { color: #986801; }
-#note_source.iris-split-pane .cm-comment       { color: #a0a1a7; font-style: italic; }
-#note_source.iris-split-pane .cm-string        { color: #50a14f; }
-#note_source.iris-split-pane .cm-variableName  { color: #e45649; }
-#note_source.iris-split-pane .cm-tag           { color: #e45649; }
-#note_source.iris-split-pane .cm-attributeName { color: #986801; }
-#note_source.iris-split-pane .cm-heading       { color: #e45649; font-weight: 700; }
-#note_source.iris-split-pane .cm-link         { color: #4078f2; text-decoration: underline; }
-#note_source.iris-split-pane .cm-strong        { font-weight: 700; }
-#note_source.iris-split-pane .cm-emphasis      { font-style: italic; }
+.iris-split-pane.iris-split-source .cm-keyword       { color: #a626a4; }
+.iris-split-pane.iris-split-source .cm-atom          { color: #986801; }
+.iris-split-pane.iris-split-source .cm-number        { color: #986801; }
+.iris-split-pane.iris-split-source .cm-comment       { color: #a0a1a7; font-style: italic; }
+.iris-split-pane.iris-split-source .cm-string        { color: #50a14f; }
+.iris-split-pane.iris-split-source .cm-variableName  { color: #e45649; }
+.iris-split-pane.iris-split-source .cm-tag           { color: #e45649; }
+.iris-split-pane.iris-split-source .cm-attributeName { color: #986801; }
+.iris-split-pane.iris-split-source .cm-heading       { color: #e45649; font-weight: 700; }
+.iris-split-pane.iris-split-source .cm-link         { color: #4078f2; text-decoration: underline; }
+.iris-split-pane.iris-split-source .cm-strong        { font-weight: 700; }
+.iris-split-pane.iris-split-source .cm-emphasis      { font-style: italic; }
 
 /* ---- 5. CodeMirror token colours (dark) ----------------------------------- */
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-keyword       { color: #c678dd; }
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-atom          { color: #d19a66; }
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-number        { color: #d19a66; }
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-comment       { color: #5c6370; font-style: italic; }
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-string        { color: #98c379; }
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-variableName  { color: #e06c75; }
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-tag           { color: #e06c75; }
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-attributeName { color: #d19a66; }
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-heading       { color: #e06c75; font-weight: 700; }
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-link         { color: #61afef; text-decoration: underline; }
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-strong        { font-weight: 700; }
-.note-body[data-theme="dark"] #note_source.iris-split-pane .cm-emphasis      { font-style: italic; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-keyword       { color: #c678dd; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-atom          { color: #d19a66; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-number        { color: #d19a66; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-comment       { color: #5c6370; font-style: italic; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-string        { color: #98c379; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-variableName  { color: #e06c75; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-tag           { color: #e06c75; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-attributeName { color: #d19a66; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-heading       { color: #e06c75; font-weight: 700; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-link         { color: #61afef; text-decoration: underline; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-strong        { font-weight: 700; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-emphasis      { font-style: italic; }
 
 /* ---- 6. WYSIWYG pane tweaks ----------------------------------------------- */
-#milkdown_root.iris-split-pane {
+.iris-split-pane.iris-split-preview {
     background: #f5f5f5;
 }
 
-.note-body[data-theme="dark"] #milkdown_root.iris-split-pane {
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-preview {
     background: #121622;
 }
 
 /* Focus tint */
-.note-body[data-theme="light"] #milkdown_root.iris-split-pane.is-active {
+.iris-split-shell[data-theme="light"] .iris-split-pane.iris-split-preview.is-active {
     background: #fafafa;
 }
 
-.note-body[data-theme="dark"] #milkdown_root.iris-split-pane.is-active {
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-preview.is-active {
     background: #171d2b;
 }
 
 /* Preview mount: make Crepe's generated .milkdown wrapper fill the pane and
    scroll its own content independently of the source pane. */
-#milkdown_root.iris-split-pane .iris-split-preview {
+.iris-split-pane.iris-split-preview .iris-split-preview-mount {
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
@@ -296,14 +284,14 @@
     overflow: hidden;
 }
 
-#milkdown_root.iris-split-pane .iris-split-preview .milkdown {
+.iris-split-pane.iris-split-preview .iris-split-preview-mount .milkdown {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
 }
 
 /* Crepe variable overrides for dark mode inside the split (playground-style) */
-.note-body[data-theme="dark"] #milkdown_root .milkdown {
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-preview .milkdown {
     --crepe-color-background: #121622;
     --crepe-color-on-background: #e0e0e0;
     --crepe-color-surface: #1a2035;
@@ -324,7 +312,7 @@
 }
 
 /* Tighter padding inside split (Crepe default is 60px 120px) */
-#note_split .milkdown .ProseMirror {
+.iris-split .milkdown .ProseMirror {
     padding: 24px 28px;
 }
 
@@ -345,7 +333,7 @@
     transition: opacity 200ms ease;
 }
 
-.note-body[data-theme="dark"] .iris-split-label {
+.iris-split-shell[data-theme="dark"] .iris-split-label {
     color: #8b92a9;
     opacity: 0.06;
 }
@@ -356,7 +344,7 @@
 }
 
 /* ---- 8. Pasted-image border + checkerboard (transparency) ----------------- */
-.note-body[data-theme="light"] .milkdown img[src] {
+.iris-split-shell[data-theme="light"] .milkdown img[src] {
     border: 1px solid #e0e0e0;
     border-radius: 4px;
     background-color: #ffffff;
@@ -369,7 +357,7 @@
     background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
 }
 
-.note-body[data-theme="dark"] .milkdown img[src] {
+.iris-split-shell[data-theme="dark"] .milkdown img[src] {
     border: 1px solid #2f374b;
     border-radius: 4px;
     background-color: #151b2b;
@@ -393,7 +381,7 @@
     gap: 2px;
 }
 
-.note-body[data-theme="dark"] .iris-view-toggle {
+.iris-split-shell[data-theme="dark"] .iris-view-toggle {
     background: rgba(255, 255, 255, 0.04);
     border-color: rgba(255, 255, 255, 0.08);
 }
@@ -412,7 +400,7 @@
     transition: background-color 120ms ease, color 120ms ease;
 }
 
-.note-body[data-theme="dark"] .iris-view-toggle button {
+.iris-split-shell[data-theme="dark"] .iris-view-toggle button {
     color: #8b92a9;
 }
 
@@ -421,7 +409,7 @@
     color: #2c2c2c;
 }
 
-.note-body[data-theme="dark"] .iris-view-toggle button:hover {
+.iris-split-shell[data-theme="dark"] .iris-view-toggle button:hover {
     background: rgba(255, 255, 255, 0.08);
     color: #e0e0e0;
 }
@@ -433,16 +421,16 @@
     box-shadow: 0 1px 2px rgba(0,0,0,0.08);
 }
 
-.note-body[data-theme="dark"] .iris-view-toggle button.is-active,
-.note-body[data-theme="dark"] .iris-view-toggle button[aria-pressed="true"] {
+.iris-split-shell[data-theme="dark"] .iris-view-toggle button.is-active,
+.iris-split-shell[data-theme="dark"] .iris-view-toggle button[aria-pressed="true"] {
     background: #2f374b;
     color: #f0f0f0;
     box-shadow: none;
 }
 
 /* ---- 10. View-mode pane visibility overrides ------------------------------ */
-.iris-split.view-source > #milkdown_root.iris-split-pane,
-.iris-split.view-preview > #note_source.iris-split-pane {
+.iris-split.view-source > .iris-split-pane.iris-split-preview,
+.iris-split.view-preview > .iris-split-pane.iris-split-source {
     flex: 0 0 0px;
     width: 0px;
     opacity: 0;
@@ -450,30 +438,30 @@
     pointer-events: none;
 }
 
-.iris-split.view-source > #note_divider.iris-split-divider,
-.iris-split.view-preview > #note_divider.iris-split-divider {
+.iris-split.view-source > .iris-split-divider,
+.iris-split.view-preview > .iris-split-divider {
     display: none;
 }
 
-.iris-split.view-source > #note_source.iris-split-pane,
-.iris-split.view-preview > #milkdown_root.iris-split-pane {
+.iris-split.view-source > .iris-split-pane.iris-split-source,
+.iris-split.view-preview > .iris-split-pane.iris-split-preview {
     flex: 1 1 100%;
 }
 
 /* ---- 11. Responsive collapse under 900px ---------------------------------- */
 @media (max-width: 899px) {
-    #note_split.iris-split {
+    .iris-split {
         flex-direction: column;
     }
 
-    #note_split.iris-split > .iris-split-pane {
+    .iris-split > .iris-split-pane {
         flex: 1 1 auto;
         width: 100% !important;
         height: 50%;
         min-height: 180px;
     }
 
-    #note_divider.iris-split-divider {
+    .iris-split-divider {
         display: none;
     }
 
@@ -486,23 +474,23 @@
     }
 
     /* Single-pane modes: shown pane takes full height */
-    .iris-split.view-source > #note_source.iris-split-pane,
-    .iris-split.view-preview > #milkdown_root.iris-split-pane {
+    .iris-split.view-source > .iris-split-pane.iris-split-source,
+    .iris-split.view-preview > .iris-split-pane.iris-split-preview {
         flex: 1 1 100%;
         height: 100%;
         width: 100%;
         opacity: 1;
     }
 
-    .iris-split.view-source > #milkdown_root.iris-split-pane,
-    .iris-split.view-preview > #note_source.iris-split-pane {
+    .iris-split.view-source > .iris-split-pane.iris-split-preview,
+    .iris-split.view-preview > .iris-split-pane.iris-split-source {
         flex: 0 0 0px;
         height: 0px;
         opacity: 0;
     }
 
     /* Reduce Crepe padding on narrow screens */
-    #note_split .milkdown .ProseMirror {
+    .iris-split .milkdown .ProseMirror {
         padding: 16px 20px;
     }
 

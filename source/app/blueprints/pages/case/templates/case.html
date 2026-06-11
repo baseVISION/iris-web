@@ -127,7 +127,6 @@
                                         <span id="last_saved" class="badge mr-3 ml-2"></span>
                                         <small id="content_last_sync"></small>
                                         <button class="btn btn-sm mr-2 ml-3" onclick="edit_case_summary();" id="sum_edit_btn" >Edit</button>
-                                        <button class="btn btn-sm btn-light mr-2" style="display:none;" onclick="toggle_summary_editor_mode();return false;" id="sum_toggle_gui" title="Switch to GUI (WYSIWYG) editor"><i class="fa-solid fa-pen-fancy"></i> GUI</button>
                                         <button type="button" id="sum_refresh_btn" class="btn btn-sm btn-outline-default mr-3" onclick="sync_editor();">
                                             Refresh
                                         </button>
@@ -136,31 +135,31 @@
                             </div>
                             <div class="collapsed" id="case_summary_card">
                                 <div class="card-body">
-                                   <div class="row mb-1">
-                                        <div class="col" id="summary_edition_btn" style="display:none;">
-                                                <div class="btn btn-sm btn-light mr-1 " title="CTRL-B" onclick="editor.insertSnippet('**${1:$SELECTION}**');editor.focus();"><i class="fa-solid fa-bold"></i></div>
-                                                <div class="btn btn-sm btn-light mr-1" title="CTRL-I" onclick="editor.insertSnippet('*${1:$SELECTION}*');editor.focus();"><i class="fa-solid fa-italic"></i></div>
-                                                <div class="btn btn-sm btn-light mr-1" title="CTRL-SHIFT-1" onclick="editor.insertSnippet('# ${1:$SELECTION}');editor.focus();">H1</div>
-                                                <div class="btn btn-sm btn-light mr-1" title="CTRL-SHIFT-2" onclick="editor.insertSnippet('## ${1:$SELECTION}');editor.focus();">H2</div>
-                                                <div class="btn btn-sm btn-light mr-1" title="CTRL-SHIFT-3" onclick="editor.insertSnippet('### ${1:$SELECTION}');editor.focus();">H3</div>
-                                                <div class="btn btn-sm btn-light mr-1" title="CTRL-SHIFT-4" onclick="editor.insertSnippet('#### ${1:$SELECTION}');editor.focus();">H4</div>
-                                                <div class="btn btn-sm btn-light mr-1" title="Insert code" onclick="editor.insertSnippet('```${1:$SELECTION}```');editor.focus();"><i class="fa-solid fa-code"></i></div>
-                                                <div class="btn btn-sm btn-light mr-1" title="Insert link" onclick="editor.insertSnippet('[${1:$SELECTION}](url)');editor.focus();"><i class="fa-solid fa-link"></i></div>
-                                                <div class="btn btn-sm btn-light mr-1" title="Insert table" onclick="editor.insertSnippet('|\t|\t|\t|\n|--|--|--|\n|\t|\t|\t|\n|\t|\t|\t|');editor.focus();"><i class="fa-solid fa-table"></i></div>
-                                                <div class="btn btn-sm btn-light mr-1" title="Insert bullet list" onclick="editor.insertSnippet('\n- \n- \n- ');editor.focus();"><i class="fa-solid fa-list"></i></div>
-                                                <div class="btn btn-sm btn-light mr-1" title="Insert numbered list" onclick="editor.insertSnippet('\n1. a  \n2. b  \n3. c  ');editor.focus();"><i class="fa-solid fa-list-ol"></i></div>
-                                        </div>
-                                    </div>
+                                    <div style="display: none" id="fetched_crc"></div>
                                     <div class="row">
-                                        <div class="col-md-6" id="container_editor_summary">
-                                            <div style="display: none" id="fetched_crc"></div>
-                                            <div id="editor_summary" contenteditable="true" spellcheck="true" data-theme="{% if current_user.in_dark_mode %}dark{% else %}light{% endif %}"></div>
-                                            <textarea id="case_summary" rows="10" cols="82" style="display: none"></textarea>
-                                            <div id="milkdown_container_summary" style="display: none;">
-                                                <div id="milkdown_root_summary"></div>
+                                        <div class="col-md-12" id="summary_split_container" style="display:none;">
+                                            <div id="summary_split_shell" class="iris-split-shell" data-theme="{% if current_user.in_dark_mode %}dark{% else %}light{% endif %}">
+                                                <div class="row mb-1 align-items-center">
+                                                    <div class="col">
+                                                        <div id="summary_view_toggle" class="iris-view-toggle" role="group" aria-label="Summary editor view">
+                                                            <button type="button" data-view="split" class="is-active" aria-pressed="true">Split</button>
+                                                            <button type="button" data-view="source" aria-pressed="false">Source</button>
+                                                            <button type="button" data-view="preview" aria-pressed="false">Preview</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div id="summary_split" class="iris-split view-split">
+                                                    <div id="summary_source" class="iris-split-pane iris-split-source is-active">
+                                                        <div class="iris-split-label">MARKDOWN</div>
+                                                    </div>
+                                                    <div id="summary_divider" class="iris-split-divider" role="separator"></div>
+                                                    <div id="summary_preview" class="iris-split-pane iris-split-preview">
+                                                        <div class="iris-split-label">PREVIEW</div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
-                                        <div class="col-md-6" id="ctrd_casesum">
+                                        <div class="col-md-12" id="ctrd_casesum">
                                             <div id="targetDiv"></div>
                                         </div>
                                     </div>
@@ -326,8 +325,6 @@
 {% include 'includes/footer.html' %}
 {% endif %} {% endblock content %} {% block javascripts %}
 
-<script src="/static/assets/js/plugin/ace/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
-<script src="/static/assets/js/plugin/ace/src-noconflict/ext-language_tools.js" type="text/javascript" charset="utf-8"></script>
 <script src="/static/assets/js/core/socket.io.js"></script>
 <script src="/static/assets/js/plugin/select/select2.js"></script>
 
@@ -340,6 +337,7 @@
 <script src="/static/assets/js/plugin/select/bootstrap-select.min.js"></script>
 <script src="/static/assets/js/plugin/select/bootstrap-multiselect.min.js"></script>
 <script type="module" src="/static/assets/js/iris/milkdown_editor.js"></script>
+<script type="module" src="/static/assets/js/iris/milkdown_split.js"></script>
 
 <script>
     $('#modal_select_report').selectpicker();

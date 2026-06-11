@@ -233,7 +233,6 @@ function mark_note_collab_dirty() {
     const hash = hash_note_content(md);
     note_dirty = true;
     note_collab_changed_since_snapshot = true;
-    $("#content_typing").text("Collaborative edit pending persistence");
     $('#last_saved').addClass('btn-danger').removeClass('btn-success');
     $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
     $('#btn_save_note').text(hash === note_collab_last_snapshot_hash ? "Snapshot" : "Snapshot")
@@ -320,12 +319,14 @@ function Collaborator( session_id, n_id ) {
     }.bind());
 
     this.collaboration_socket.on('leave-note', function (data) {
+        if (is_note_collab_active()) return;
         if (parseInt(data.note_id) !== parseInt(note_id)) return;
         ppl_viewing.delete(data.user);
         refresh_ppl_list(session_id, note_id);
     });
 
     this.collaboration_socket.on('join-notes', function (data) {
+        if (is_note_collab_active()) return;
         if (parseInt(data.note_id) !== parseInt(note_id)) return;
         if (ppl_viewing.has(data.user)) return;
         ppl_viewing.set(filterXSS(data.user), 1);
@@ -334,11 +335,13 @@ function Collaborator( session_id, n_id ) {
     });
 
     this.collaboration_socket.on('ping-note', function (data) {
+        if (is_note_collab_active()) return;
         if (parseInt(data.note_id) !== parseInt(note_id)) return;
         collaborator.collaboration_socket.emit('pong-note', {'channel': collaborator.channel, 'note_id': note_id});
     });
 
     this.collaboration_socket.on('disconnect', function (data) {
+        if (is_note_collab_active()) return;
         ppl_viewing.delete(data.user);
         refresh_ppl_list(session_id, note_id);
     });
@@ -356,6 +359,10 @@ Collaborator.prototype.close = function( note_id ) {
 }
 
 function auto_remove_typing() {
+    if (is_note_collab_active()) {
+        $("#content_typing").text("");
+        return;
+    }
     if ($("#content_typing").text() == is_typing) {
         $("#content_typing").text("");
     } else {
@@ -610,8 +617,8 @@ function note_revision_revert(_item, _rev) {
             })
             .then((result) => {
                 notify_success(result.revision_created
-                    ? 'Note reverted to revision #' + _rev + ' and snapshotted.'
-                    : 'Note reverted to revision #' + _rev + '. Latest snapshot already matched.');
+                    ? 'Reverted to revision #' + _rev + ' and snapshotted.'
+                    : 'Reverted to revision #' + _rev + '. Latest snapshot already matched.');
             })
             .catch(() => {
                 notify_error('Note reverted locally, but collab snapshot failed.');
@@ -691,7 +698,7 @@ async function note_detail(id) {
             }
 
             note_id = id;
-            collaborator = new Collaborator(get_caseid(), id);
+            collaborator = null;
 
             await wait_for_split_editor();
 
@@ -713,6 +720,7 @@ async function note_detail(id) {
                 collab: {
                     room: 'note-' + data.data.note_id,
                     user: get_note_collab_user(),
+                    presenceTarget: '#ppl_list_viewing',
                     onStatus: function(status) {
                         $('#note_split').attr('data-collab-status', status || '');
                     },
@@ -726,10 +734,15 @@ async function note_detail(id) {
             }
 
             note_split.focus();
+            if (!is_note_collab_active()) {
+                collaborator = new Collaborator(get_caseid(), id);
+            }
 
             load_menu_mod_options_modal(id, 'note', $("#note_quick_actions"));
 
-            collaborator_socket.emit('ping-note', { 'channel': 'case-' + get_caseid() + '-notes', 'note_id': note_id });
+            if (!is_note_collab_active()) {
+                collaborator_socket.emit('ping-note', { 'channel': 'case-' + get_caseid() + '-notes', 'note_id': note_id });
+            }
 
             toggleNoteEditor(true);
 
@@ -756,6 +769,10 @@ async function note_detail(id) {
 }
 
 function refresh_ppl_list() {
+    if (is_note_collab_active()) {
+        $('#ppl_list_viewing').empty();
+        return;
+    }
     $('#ppl_list_viewing').empty();
     for (let [key, value] of ppl_viewing) {
         $('#ppl_list_viewing').append(get_avatar_initials(key, false, undefined, true));
@@ -1387,6 +1404,9 @@ function createDirectoryListItem(directory, directoryMap) {
 
 
 function note_interval_pinger() {
+    if (is_note_collab_active()) {
+        return;
+    }
     if (new Date() - last_ping > 2000) {
         collaborator_socket.emit('ping-note',
             { 'channel': 'case-' + get_caseid() + '-notes', 'note_id': note_id });
@@ -1415,6 +1435,9 @@ $(document).ready(function(){
     collaborator_socket.emit('join-notes-overview', { 'channel': 'case-' + cid + '-notes' });
 
     collaborator_socket.on('ping-note', function(data) {
+        if (is_note_collab_active()) {
+            return;
+        }
         last_ping = new Date();
 
         // Set as int to avoid type mismatch
@@ -1436,7 +1459,9 @@ $(document).ready(function(){
         note_interval_pinger();
     }, 2000);
 
-    collaborator_socket.emit('ping-note', { 'channel': 'case-' + cid + '-notes', 'note_id': note_id });
+    if (!is_note_collab_active()) {
+        collaborator_socket.emit('ping-note', { 'channel': 'case-' + cid + '-notes', 'note_id': note_id });
+    }
 
     setInterval(auto_remove_typing, 1500);
 

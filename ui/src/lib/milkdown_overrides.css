@@ -501,3 +501,210 @@
         right: 10px;
     }
 }
+
+/* ============================================================================
+   Collaboration UI — Real-time cursors, presence, connection state, read-only badge
+   ============================================================================
+   Scope: split editor during Yjs collaborative editing.
+   Theming via .iris-split-shell[data-theme] (dark primary, light supported).
+   Per-user cursor colours are driven by inline --iris-cursor-color.
+   No animations (serious IR-tool aesthetic).
+   ============================================================================ */
+
+/* ---- 1. REMOTE CURSORS (y-prosemirror inside .milkdown .ProseMirror) ------- */
+
+.milkdown .ProseMirror .ProseMirror-yjs-cursor {
+    position: relative;
+    border-left: 2px solid var(--iris-cursor-color, #66aaff);
+    margin-left: -2px;
+    pointer-events: none;
+    word-break: normal;
+}
+
+/* Name pill — floating above the caret, coloured to match the user */
+.milkdown .ProseMirror .ProseMirror-yjs-cursor > * {
+    position: absolute;
+    top: -22px;
+    left: -2px;
+    white-space: nowrap;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 3px 6px;
+    border-radius: 4px;
+    background: var(--iris-cursor-color, #66aaff);
+    color: #ffffff;
+    opacity: 0.95;
+    pointer-events: none;
+    user-select: none;
+    z-index: 20;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* Translucent selection wash for remote selections */
+.milkdown .ProseMirror .ProseMirror-yjs-selection {
+    background: var(--iris-cursor-color, #66aaff);
+    opacity: 0.16;
+    pointer-events: none;
+}
+
+/* ---- 2. PRESENCE BAR (header avatar stack + connection status) ------------- */
+
+.iris-collab-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 2px 0;
+}
+
+/* Avatar stack */
+.iris-collab-avatars {
+    display: inline-flex;
+    align-items: center;
+}
+
+.iris-collab-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    font-size: 10px;
+    font-weight: 700;
+    color: #ffffff;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    margin-left: -6px;
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+}
+
+.iris-collab-avatars .iris-collab-avatar:first-child {
+    margin-left: 0;
+}
+
+/* Stacking order: first in DOM (leftmost) on top */
+.iris-collab-avatars .iris-collab-avatar:nth-child(1) { z-index: 5; }
+.iris-collab-avatars .iris-collab-avatar:nth-child(2) { z-index: 4; }
+.iris-collab-avatars .iris-collab-avatar:nth-child(3) { z-index: 3; }
+.iris-collab-avatars .iris-collab-avatar:nth-child(4) { z-index: 2; }
+.iris-collab-avatars .iris-collab-avatar:nth-child(5) { z-index: 1; }
+
+/* Overflow chip ("+N") */
+.iris-collab-avatar.iris-collab-more {
+    background: #5c6370;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+/* Dark / light border colours so overlap looks like stacked rings */
+.iris-split-shell[data-theme="light"] .iris-collab-avatar {
+    border-color: #ffffff;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-collab-avatar {
+    border-color: #121622;
+}
+
+/* Connection status dot */
+.iris-collab-status {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-block;
+}
+
+/* State colours — static only (no animations per design brief) */
+.iris-collab-status.is-live {
+    background: #34d399;
+}
+
+.iris-collab-status.is-syncing {
+    background: #e5a50a;
+    opacity: 0.85;
+}
+
+.iris-collab-status.is-reconnecting {
+    background: #f85149;
+    opacity: 0.75;
+}
+
+.iris-collab-status.is-offline {
+    background: #f85149;
+}
+
+/* Status text label */
+.iris-collab-status-text {
+    font-size: 11px;
+    font-weight: 500;
+    color: #5f6368;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-collab-status-text {
+    color: #8b92a9;
+}
+
+/* ---- 3. CONNECTION-STATE BORDER on PREVIEW pane ---------------------------- */
+
+/* Ensure border-box so the 2px top border never shifts content */
+.iris-split-pane.iris-split-preview {
+    box-sizing: border-box;
+}
+
+/* Syncing = amber */
+.iris-split-shell.collab-syncing .iris-split-pane.iris-split-preview {
+    border-top: 2px solid #e5a50a;
+}
+
+/* Live = transparent (deliberately subtle so it is not noisy when stable) */
+.iris-split-shell.collab-live .iris-split-pane.iris-split-preview {
+    border-top: 2px solid transparent;
+}
+
+/* Reconnecting / Offline = red */
+.iris-split-shell.collab-reconnecting .iris-split-pane.iris-split-preview,
+.iris-split-shell.collab-offline .iris-split-pane.iris-split-preview {
+    border-top: 2px solid #f85149;
+}
+
+/* ---- 4. READ-ONLY SOURCE BADGE + DIMMING ----------------------------------- */
+
+.iris-collab-liveview-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    line-height: 1;
+    pointer-events: none;
+    user-select: none;
+    opacity: 0.65;
+    background: rgba(0, 0, 0, 0.05);
+    color: #5f6368;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.iris-split-shell[data-theme="dark"] .iris-collab-liveview-badge {
+    background: rgba(255, 255, 255, 0.06);
+    color: #8b92a9;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Dim source pane when it is read-only during collab */
+.iris-split-pane.iris-split-source.is-collab-readonly {
+    opacity: 0.72;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source.is-collab-readonly {
+    opacity: 0.65;
+}

@@ -417,6 +417,68 @@ function updateCollabStatus(status) {
     }
 }
 
+function getCollabConnectionStatus(state) {
+    if (!state || !state.provider) {
+        return null;
+    }
+
+    const { provider } = state;
+    if (
+        state.offline
+        || provider.shouldConnect === false
+        || state.rawStatus === 'closed'
+        || state.rawStatus === 'offline'
+    ) {
+        return 'offline';
+    }
+    if (provider.wsconnected && provider.synced) {
+        return 'live';
+    }
+    if (state.rawStatus === 'connecting' || provider.wsconnecting) {
+        return 'syncing';
+    }
+    if (state.rawStatus === 'disconnected') {
+        return state.hasConnected ? 'reconnecting' : 'syncing';
+    }
+    if (provider.wsconnected) {
+        return 'syncing';
+    }
+    return state.hasConnected ? 'reconnecting' : 'syncing';
+}
+
+function updateCollabConnectionStatus(state) {
+    updateCollabStatus(getCollabConnectionStatus(state));
+}
+
+function getCollabAwarenessUsers() {
+    if (!_collabState || !_collabState.provider || !_collabState.provider.awareness) {
+        return [];
+    }
+
+    const users = [];
+    const localClientID = _collabState.ydoc ? _collabState.ydoc.clientID : null;
+    try {
+        _collabState.provider.awareness.getStates().forEach((state, clientID) => {
+            const user = normalizeCollabUser(state && state.user);
+            users.push({
+                clientID,
+                name: user.name,
+                color: user.color,
+                isSelf: clientID === localClientID,
+            });
+        });
+    } catch (e) {
+        return [];
+    }
+    return users;
+}
+
+function updateCollabAwareness() {
+    if (_collabState && typeof _collabState.onAwareness === 'function') {
+        try { _collabState.onAwareness(getCollabAwarenessUsers()); } catch (e) { /* noop */ }
+    }
+}
+
 function destroyCollabState() {
     if (!_collabState) {
         _collabStatus = null;
@@ -424,6 +486,8 @@ function destroyCollabState() {
     }
 
     const { service, provider, ydoc, cleanupFns } = _collabState;
+    _collabState.offline = true;
+    updateCollabConnectionStatus(_collabState);
     if (Array.isArray(cleanupFns)) {
         cleanupFns.forEach((fn) => {
             try { fn(); } catch (e) { /* noop */ }
@@ -631,12 +695,42 @@ window.IrisMilkdown = {
                 provider,
                 service,
                 cleanupFns: [],
+                rawStatus: provider.wsconnected ? 'connected' : 'connecting',
+                hasConnected: provider.wsconnected === true,
+                offline: false,
                 onStatus: typeof collabConfig.onStatus === 'function' ? collabConfig.onStatus : null,
+                onAwareness: typeof collabConfig.onAwareness === 'function' ? collabConfig.onAwareness : null,
             };
             _collabState.cleanupFns.push(installSyncedTemplateSeed(_collabState, irisMarkdown || ''));
 
-            provider.on('status', ({ status }) => updateCollabStatus(status));
-            updateCollabStatus(provider.wsconnected ? 'connected' : 'connecting');
+            const handleStatus = ({ status }) => {
+                if (!_collabState || _collabState.provider !== provider) {
+                    return;
+                }
+                _collabState.rawStatus = status;
+                if (status === 'connected') {
+                    _collabState.hasConnected = true;
+                }
+                updateCollabConnectionStatus(_collabState);
+            };
+            const handleSync = () => {
+                if (!_collabState || _collabState.provider !== provider) {
+                    return;
+                }
+                updateCollabConnectionStatus(_collabState);
+            };
+            const handleAwareness = () => updateCollabAwareness();
+
+            provider.on('status', handleStatus);
+            provider.on('sync', handleSync);
+            provider.awareness.on('change', handleAwareness);
+            _collabState.cleanupFns.push(() => {
+                try { provider.off('status', handleStatus); } catch (e) { /* noop */ }
+                try { provider.off('sync', handleSync); } catch (e) { /* noop */ }
+                try { provider.awareness.off('change', handleAwareness); } catch (e) { /* noop */ }
+            });
+            updateCollabConnectionStatus(_collabState);
+            updateCollabAwareness();
         }
 
         if (_onChange) {
@@ -689,6 +783,10 @@ window.IrisMilkdown = {
 
     getCollabStatus() {
         return _collabStatus;
+    },
+
+    getCollabAwarenessUsers() {
+        return getCollabAwarenessUsers();
     },
 
     getCollabAwarenessStateCount() {

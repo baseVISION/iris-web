@@ -330,7 +330,6 @@ function on_summary_split_change(md) {
     summary_dirty = true;
     if (is_summary_collab_active()) {
         set_saved_status('Changes not saved', false);
-        $('#content_typing').text('Collaborative edit pending persistence');
         schedule_summary_collab_persist();
         return;
     }
@@ -363,6 +362,7 @@ async function open_summary_split() {
             collab: {
                 room: 'summary-' + get_caseid(),
                 user: get_summary_collab_user(),
+                presenceTarget: '#content_typing',
                 onStatus: function(status) {
                     $('#summary_split').attr('data-collab-status', status || '');
                 },
@@ -546,6 +546,10 @@ function sync_editor(no_check) {
 }
 
 function auto_remove_typing() {
+    if (is_summary_collab_active()) {
+        $('#content_typing').text('');
+        return;
+    }
     if ($('#content_typing').text() === is_typing) {
         $('#content_typing').text('');
     } else {

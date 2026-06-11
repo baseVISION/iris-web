@@ -249,6 +249,20 @@ class SplitEditor {
         return window.IrisMilkdown.getCollabStatus();
     }
 
+    getCollabAwarenessStateCount() {
+        if (!this.collabActive || !window.IrisMilkdown || typeof window.IrisMilkdown.getCollabAwarenessStateCount !== 'function') {
+            return 0;
+        }
+        return window.IrisMilkdown.getCollabAwarenessStateCount();
+    }
+
+    isLastCollabClient() {
+        if (!this.collabActive || !window.IrisMilkdown || typeof window.IrisMilkdown.isLastCollabClient !== 'function') {
+            return true;
+        }
+        return window.IrisMilkdown.isLastCollabClient();
+    }
+
     setMarkdown(md) {
         if (this.sourceTimer) {
             clearTimeout(this.sourceTimer);

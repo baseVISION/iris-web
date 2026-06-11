@@ -7,11 +7,12 @@ import { Crepe } from '@milkdown/crepe';
 import { LanguageDescription, LanguageSupport, StreamLanguage } from '@codemirror/language';
 import { languages } from '@codemirror/language-data';
 import { tags } from '@lezer/highlight';
-import { editorViewCtx, parserCtx } from '@milkdown/kit/core';
+import { editorViewCtx, parserCtx, schemaCtx, serializerCtx } from '@milkdown/kit/core';
 import { Slice } from '@milkdown/kit/prose/model';
 import { collab, collabServiceCtx } from '@milkdown/plugin-collab';
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
+import { yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror';
 import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/frame.css';
 import '../lib/milkdown_overrides.css';
@@ -403,6 +404,12 @@ let _onChange = null;
 let _collabState = null;
 let _collabStatus = null;
 
+const COLLAB_TEMPLATE_CLAIM_DELAY_MS = 500;
+const COLLAB_TEMPLATE_STALE_CLAIM_MS = 5000;
+const COLLAB_TEMPLATE_META_MAP = 'irisTemplateSeed';
+const COLLAB_TEMPLATE_CLAIM_KEY = 'prosemirrorTemplateClaim';
+const COLLAB_TEMPLATE_SEEDED_KEY = 'prosemirrorTemplateSeeded';
+
 function updateCollabStatus(status) {
     _collabStatus = status || null;
     if (_collabState && typeof _collabState.onStatus === 'function') {
@@ -416,12 +423,153 @@ function destroyCollabState() {
         return;
     }
 
-    const { service, provider, ydoc } = _collabState;
+    const { service, provider, ydoc, cleanupFns } = _collabState;
+    if (Array.isArray(cleanupFns)) {
+        cleanupFns.forEach((fn) => {
+            try { fn(); } catch (e) { /* noop */ }
+        });
+    }
     try { if (service) service.disconnect(); } catch (e) { /* noop */ }
     try { if (provider) provider.destroy(); } catch (e) { /* noop */ }
     try { if (ydoc) ydoc.destroy(); } catch (e) { /* noop */ }
     _collabState = null;
     updateCollabStatus(null);
+}
+
+function getCollabXmlFragment(ydoc) {
+    return ydoc ? ydoc.getXmlFragment('prosemirror') : null;
+}
+
+function isCollabXmlFragmentEmpty(fragment) {
+    return !!fragment && fragment.length === 0;
+}
+
+function getCollabAwarenessClientIds(provider, ydoc) {
+    const ids = new Set();
+    if (ydoc) {
+        ids.add(ydoc.clientID);
+    }
+    try {
+        if (provider && provider.awareness) {
+            provider.awareness.getStates().forEach((_state, id) => ids.add(id));
+        }
+    } catch (e) {
+        /* noop */
+    }
+    return ids;
+}
+
+function installSyncedTemplateSeed(state, initialMarkdown) {
+    const { provider, ydoc, service } = state;
+    const fragment = getCollabXmlFragment(ydoc);
+    const meta = ydoc.getMap(COLLAB_TEMPLATE_META_MAP);
+    const template = irisToMilkdown(initialMarkdown || '');
+    let seedDone = false;
+    let claimTimer = null;
+
+    const clearClaimTimer = () => {
+        if (claimTimer) {
+            clearTimeout(claimTimer);
+            claimTimer = null;
+        }
+    };
+
+    const stillCurrent = () => _collabState === state && !seedDone;
+
+    const finishWithoutSeed = () => {
+        seedDone = true;
+        clearClaimTimer();
+    };
+
+    const claimIsStale = (claim) => {
+        if (!claim || typeof claim !== 'object') {
+            return false;
+        }
+        const claimedAt = Number(claim.claimedAt) || 0;
+        if (Date.now() - claimedAt <= COLLAB_TEMPLATE_STALE_CLAIM_MS) {
+            return false;
+        }
+        return !getCollabAwarenessClientIds(provider, ydoc).has(claim.clientID);
+    };
+
+    const finalizeSeedClaim = () => {
+        claimTimer = null;
+        if (!stillCurrent() || provider.synced !== true) {
+            return;
+        }
+        if (!isCollabXmlFragmentEmpty(fragment)) {
+            finishWithoutSeed();
+            return;
+        }
+
+        const claim = meta.get(COLLAB_TEMPLATE_CLAIM_KEY);
+        if (!claim || claim.clientID !== ydoc.clientID) {
+            return;
+        }
+
+        service.applyTemplate(template, () => isCollabXmlFragmentEmpty(fragment));
+        meta.set(COLLAB_TEMPLATE_SEEDED_KEY, {
+            clientID: ydoc.clientID,
+            seededAt: Date.now(),
+        });
+        seedDone = true;
+    };
+
+    const trySeedAfterSync = (synced) => {
+        if (synced !== true || !stillCurrent()) {
+            return;
+        }
+        if (!isCollabXmlFragmentEmpty(fragment)) {
+            finishWithoutSeed();
+            return;
+        }
+        if (meta.get(COLLAB_TEMPLATE_SEEDED_KEY)) {
+            finishWithoutSeed();
+            return;
+        }
+
+        const claim = meta.get(COLLAB_TEMPLATE_CLAIM_KEY);
+        if (!claim || claimIsStale(claim)) {
+            meta.set(COLLAB_TEMPLATE_CLAIM_KEY, {
+                clientID: ydoc.clientID,
+                claimedAt: Date.now(),
+            });
+        }
+
+        clearClaimTimer();
+        claimTimer = setTimeout(finalizeSeedClaim, COLLAB_TEMPLATE_CLAIM_DELAY_MS);
+    };
+
+    provider.on('sync', trySeedAfterSync);
+    if (provider.synced === true) {
+        setTimeout(() => trySeedAfterSync(true), 0);
+    }
+
+    return () => {
+        clearClaimTimer();
+        try { provider.off('sync', trySeedAfterSync); } catch (e) { /* noop */ }
+    };
+}
+
+function readMilkdownMarkdown() {
+    if (!_crepe) {
+        return null;
+    }
+
+    let markdown = null;
+    _crepe.editor.action((ctx) => {
+        const serializer = ctx.get(serializerCtx);
+        if (_collabState && _collabState.ydoc) {
+            const schema = ctx.get(schemaCtx);
+            const fragment = _collabState.ydoc.getXmlFragment('prosemirror');
+            markdown = serializer(yXmlFragmentToProseMirrorRootNode(fragment, schema));
+            return;
+        }
+
+        const view = ctx.get(editorViewCtx);
+        markdown = serializer(view.state.doc);
+    });
+    return markdown;
 }
 
 window.IrisMilkdown = {
@@ -475,16 +623,17 @@ window.IrisMilkdown = {
             service
                 .bindDoc(ydoc)
                 .setAwareness(provider.awareness)
-                .connect()
-                .applyTemplate(irisToMilkdown(irisMarkdown || ''));
+                .connect();
 
             _collabState = {
                 room,
                 ydoc,
                 provider,
                 service,
+                cleanupFns: [],
                 onStatus: typeof collabConfig.onStatus === 'function' ? collabConfig.onStatus : null,
             };
+            _collabState.cleanupFns.push(installSyncedTemplateSeed(_collabState, irisMarkdown || ''));
 
             provider.on('status', ({ status }) => updateCollabStatus(status));
             updateCollabStatus(provider.wsconnected ? 'connected' : 'connecting');
@@ -492,8 +641,8 @@ window.IrisMilkdown = {
 
         if (_onChange) {
             _crepe.on((listener) => {
-                listener.markdownUpdated(() => {
-                    try { _onChange(milkdownToIris(_crepe.getMarkdown())); } catch (e) { /* noop */ }
+                listener.markdownUpdated((_ctx, markdown) => {
+                    try { _onChange(milkdownToIris(markdown)); } catch (e) { /* noop */ }
                 });
             });
         }
@@ -502,7 +651,8 @@ window.IrisMilkdown = {
 
     // Current content as IRIS-canonical markdown (this is what save_note must persist).
     getMarkdown() {
-        return _crepe ? milkdownToIris(_crepe.getMarkdown()) : null;
+        const markdown = readMilkdownMarkdown();
+        return markdown !== null ? milkdownToIris(markdown) : null;
     },
 
     setMarkdown(irisMarkdown) {
@@ -539,6 +689,22 @@ window.IrisMilkdown = {
 
     getCollabStatus() {
         return _collabStatus;
+    },
+
+    getCollabAwarenessStateCount() {
+        if (!_collabState || !_collabState.provider || !_collabState.provider.awareness) {
+            return 0;
+        }
+        try {
+            return _collabState.provider.awareness.getStates().size;
+        } catch (e) {
+            return 0;
+        }
+    },
+
+    isLastCollabClient() {
+        const count = this.getCollabAwarenessStateCount();
+        return count <= 1;
     },
 
     async destroy() {

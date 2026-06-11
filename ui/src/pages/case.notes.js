@@ -13,6 +13,14 @@ let previousNoteTitle = null;
 let timer = null;
 let timeout = 5000;
 let note_dirty = false;
+let note_collab_persist_timer = null;
+let note_collab_idle_snapshot_timer = null;
+let note_collab_last_persist_hash = null;
+let note_collab_last_snapshot_hash = null;
+let note_collab_changed_since_snapshot = false;
+
+const NOTE_COLLAB_PERSIST_DEBOUNCE_MS = 4000;
+const NOTE_COLLAB_IDLE_SNAPSHOT_MS = 60000;
 
 const NOTE_COLLAB_COLORS = [
     '#0f766e',
@@ -35,6 +43,11 @@ function hash_note_collab_string(value) {
         hash |= 0;
     }
     return Math.abs(hash);
+}
+
+function hash_note_content(value) {
+    const text = value || '';
+    return `${text.length}:${hash_note_collab_string(text)}`;
 }
 
 function get_note_collab_user() {
@@ -60,6 +73,219 @@ function get_note_collab_user() {
 
 function is_note_collab_active() {
     return !!(note_split && typeof note_split.isCollabActive === 'function' && note_split.isCollabActive());
+}
+
+function is_note_collab_last_client() {
+    return !note_split
+        || typeof note_split.isLastCollabClient !== 'function'
+        || note_split.isLastCollabClient();
+}
+
+function clear_note_collab_timers() {
+    if (note_collab_persist_timer) {
+        clearTimeout(note_collab_persist_timer);
+        note_collab_persist_timer = null;
+    }
+    if (note_collab_idle_snapshot_timer) {
+        clearTimeout(note_collab_idle_snapshot_timer);
+        note_collab_idle_snapshot_timer = null;
+    }
+}
+
+function reset_note_collab_state(markdown) {
+    clear_note_collab_timers();
+    const hash = hash_note_content(markdown || '');
+    note_collab_last_persist_hash = hash;
+    note_collab_last_snapshot_hash = hash;
+    note_collab_changed_since_snapshot = false;
+}
+
+function note_collab_payload(markdown) {
+    return {
+        csrf_token: $('#csrf_token').val(),
+        note_content: markdown || '',
+        client_hash: hash_note_content(markdown || ''),
+    };
+}
+
+function note_collab_mark_persisted(hash) {
+    note_collab_last_persist_hash = hash;
+    note_dirty = false;
+    $('#last_saved').removeClass('btn-danger').addClass('btn-success');
+    $('#last_saved > i').attr('class', "fa-solid fa-file-circle-check");
+    $("#content_last_saved_by").text('Last persisted by you');
+    $('#btn_save_note').text("Snapshot").removeClass('btn-success btn-danger btn-warning').addClass('btn-light');
+}
+
+function note_collab_persist(noteId, markdown, options = {}) {
+    if (!noteId) {
+        return Promise.resolve({ skipped: true });
+    }
+
+    const md = markdown !== undefined ? markdown : get_active_note_markdown();
+    const hash = hash_note_content(md);
+    if (!options.force && hash === note_collab_last_persist_hash) {
+        return Promise.resolve({ skipped: true, hash });
+    }
+
+    return new Promise((resolve, reject) => {
+        post_request_api(
+            `/case/notes/${noteId}/collab/persist`,
+            JSON.stringify(note_collab_payload(md)),
+            false,
+            undefined,
+            cid
+        )
+        .done((data) => {
+            if (api_request_failed(data)) {
+                reject(data);
+                return;
+            }
+            note_collab_mark_persisted(hash);
+            resolve({ skipped: false, hash, data });
+        })
+        .fail(reject);
+    });
+}
+
+function note_collab_snapshot(noteId, markdown, options = {}) {
+    if (!noteId) {
+        return Promise.resolve({ skipped: true });
+    }
+
+    const md = markdown !== undefined ? markdown : get_active_note_markdown();
+    const hash = hash_note_content(md);
+    if (!options.force && !note_collab_changed_since_snapshot && hash === note_collab_last_snapshot_hash) {
+        return Promise.resolve({ skipped: true, hash });
+    }
+
+    return new Promise((resolve, reject) => {
+        post_request_api(
+            `/case/notes/${noteId}/collab/snapshot`,
+            JSON.stringify({
+                csrf_token: $('#csrf_token').val(),
+                client_hash: hash,
+            }),
+            false,
+            undefined,
+            cid
+        )
+        .done((data) => {
+            if (api_request_failed(data)) {
+                reject(data);
+                return;
+            }
+            note_collab_last_snapshot_hash = hash;
+            note_collab_changed_since_snapshot = false;
+            $('#btn_save_note').text(data.data && data.data.revision_created ? "Snapshotted" : "Snapshot")
+                .addClass('btn-success')
+                .removeClass('btn-danger btn-warning');
+            resolve({
+                skipped: false,
+                hash,
+                revision_created: !!(data.data && data.data.revision_created),
+                data,
+            });
+        })
+        .fail(reject);
+    });
+}
+
+async function note_collab_persist_and_snapshot(noteId, markdown, options = {}) {
+    const md = markdown !== undefined ? markdown : get_active_note_markdown();
+    await note_collab_persist(noteId, md, { force: options.forcePersist });
+    return note_collab_snapshot(noteId, md, { force: options.forceSnapshot });
+}
+
+function schedule_note_collab_persist() {
+    const n_id = $('#currentNoteIDLabel').data('note_id');
+    if (!n_id) {
+        return;
+    }
+    if (note_collab_persist_timer) {
+        clearTimeout(note_collab_persist_timer);
+    }
+    note_collab_persist_timer = setTimeout(() => {
+        note_collab_persist_timer = null;
+        note_collab_persist(n_id).catch(() => {});
+    }, NOTE_COLLAB_PERSIST_DEBOUNCE_MS);
+}
+
+function schedule_note_collab_idle_snapshot() {
+    const n_id = $('#currentNoteIDLabel').data('note_id');
+    if (!n_id) {
+        return;
+    }
+    if (note_collab_idle_snapshot_timer) {
+        clearTimeout(note_collab_idle_snapshot_timer);
+    }
+    note_collab_idle_snapshot_timer = setTimeout(() => {
+        note_collab_idle_snapshot_timer = null;
+        if (!note_collab_changed_since_snapshot) {
+            return;
+        }
+        note_collab_persist_and_snapshot(n_id).catch(() => {});
+    }, NOTE_COLLAB_IDLE_SNAPSHOT_MS);
+}
+
+function mark_note_collab_dirty() {
+    const md = get_active_note_markdown();
+    const hash = hash_note_content(md);
+    note_dirty = true;
+    note_collab_changed_since_snapshot = true;
+    $("#content_typing").text("Collaborative edit pending persistence");
+    $('#last_saved').addClass('btn-danger').removeClass('btn-success');
+    $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
+    $('#btn_save_note').text(hash === note_collab_last_snapshot_hash ? "Snapshot" : "Snapshot")
+        .removeClass('btn-success btn-danger')
+        .addClass('btn-warning');
+    schedule_note_collab_persist();
+    schedule_note_collab_idle_snapshot();
+}
+
+function note_collab_sync_post(uri, payload) {
+    try {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${uri}?cid=${encodeURIComponent(get_caseid())}`, false);
+        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+        xhr.send(JSON.stringify(payload));
+        return xhr.status >= 200 && xhr.status < 300;
+    } catch (e) {
+        return false;
+    }
+}
+
+function flush_note_collab_leave_sync(noteId) {
+    if (!noteId || !is_note_collab_active() || !is_note_collab_last_client()) {
+        return;
+    }
+
+    const md = get_active_note_markdown();
+    const hash = hash_note_content(md);
+    const csrf = $('#csrf_token').val();
+    note_collab_sync_post(`/case/notes/${noteId}/collab/persist`, {
+        csrf_token: csrf,
+        note_content: md,
+        client_hash: hash,
+    });
+    note_collab_sync_post(`/case/notes/${noteId}/collab/snapshot`, {
+        csrf_token: csrf,
+        client_hash: hash,
+    });
+}
+
+async function flush_note_collab_before_leave(noteId) {
+    if (!noteId || !is_note_collab_active() || !is_note_collab_last_client()) {
+        clear_note_collab_timers();
+        return;
+    }
+
+    const md = get_active_note_markdown();
+    clear_note_collab_timers();
+    await note_collab_persist_and_snapshot(noteId, md, {
+        forcePersist: true,
+        forceSnapshot: note_collab_changed_since_snapshot || hash_note_content(md) !== note_collab_last_snapshot_hash,
+    }).catch(() => {});
 }
 
 
@@ -370,12 +596,29 @@ function note_revision_revert(_item, _rev) {
         $('#currentNoteTitle').text(revision.note_title);
         if (note_split) {
             note_split.setMarkdown(revision.note_content);
-            mark_note_dirty();
         }
         if (close_modal) {
             $('#notePreviewModal').modal('hide');
         }
         $('#noteModificationHistoryModal').modal('hide');
+        if (is_note_collab_active()) {
+            clear_note_collab_timers();
+            note_collab_changed_since_snapshot = true;
+            note_collab_persist_and_snapshot(_item, revision.note_content || '', {
+                forcePersist: true,
+                forceSnapshot: true,
+            })
+            .then((result) => {
+                notify_success(result.revision_created
+                    ? 'Note reverted to revision #' + _rev + ' and snapshotted.'
+                    : 'Note reverted to revision #' + _rev + '. Latest snapshot already matched.');
+            })
+            .catch(() => {
+                notify_error('Note reverted locally, but collab snapshot failed.');
+            });
+            return;
+        }
+        mark_note_dirty();
         notify_success('Note reverted to revision #' + _rev + '. Save to apply changes.');
     });
 }
@@ -426,10 +669,6 @@ async function note_detail(id) {
         if (data.status === 'success') {
             let previous_note_id = $('#currentNoteIDLabel').data('note_id');
 
-            if (collaborator !== null) {
-                collaborator.close(previous_note_id);
-            }
-
             if (timer) {
                 clearTimeout(timer);
                 timer = null;
@@ -437,12 +676,18 @@ async function note_detail(id) {
 
             if (note_split) {
                 let previous_note_markdown = previous_note_id ? note_split.getMarkdown() : null;
-                if (note_dirty && previous_note_id) {
+                if (is_note_collab_active()) {
+                    await flush_note_collab_before_leave(previous_note_id);
+                } else if (note_dirty && previous_note_id) {
                     silent_save_note(previous_note_id, previous_note_markdown);
                 }
                 await note_split.destroy();
                 note_split = null;
                 note_dirty = false;
+            }
+
+            if (collaborator !== null) {
+                collaborator.close(previous_note_id);
             }
 
             note_id = id;
@@ -456,6 +701,7 @@ async function note_detail(id) {
                 .data('note_id', data.data.note_id);
 
             let target_note = id;
+            reset_note_collab_state(data.data.note_content || '');
             note_split = await window.IrisSplitEditor.create({
                 container: '#note_split',
                 sourcePane: '#note_source',
@@ -495,7 +741,7 @@ async function note_detail(id) {
             $('#content_typing').text('');
             $('#last_saved').removeClass('btn-danger').addClass('btn-success');
             $('#last_saved > i').attr('class', "fa-solid fa-file-circle-check");
-            $('#btn_save_note').text("Save note").removeClass('btn-success btn-danger btn-warning').addClass('btn-light');
+            $('#btn_save_note').text("Snapshot").removeClass('btn-success btn-danger btn-warning').addClass('btn-light');
             note_dirty = false;
 
             setSharedLink(id);
@@ -551,7 +797,12 @@ function get_active_note_markdown() {
 }
 
 /* Mark the note as having unsaved changes and schedule an autosave. */
-function mark_note_dirty() {
+function mark_note_dirty(markdown) {
+    if (is_note_collab_active()) {
+        mark_note_collab_dirty(markdown);
+        return;
+    }
+
     note_dirty = true;
     $("#content_typing").text("You are typing..");
     $('#last_saved').addClass('btn-danger').removeClass('btn-success');
@@ -581,6 +832,25 @@ function save_note() {
     let n_id = $('#currentNoteIDLabel').data('note_id')
 
     if (!n_id) { return false; }
+
+    if (is_note_collab_active()) {
+        if (note_collab_persist_timer) {
+            clearTimeout(note_collab_persist_timer);
+            note_collab_persist_timer = null;
+        }
+        const md = get_active_note_markdown();
+        $('#btn_save_note').text("Snapshotting").removeClass('btn-success btn-danger').addClass('btn-warning');
+        note_collab_persist_and_snapshot(n_id, md, { forceSnapshot: true })
+            .then((result) => {
+                notify_success(result.revision_created
+                    ? 'Note snapshot created.'
+                    : 'Note already matches latest snapshot.');
+            })
+            .catch(() => {
+                $('#btn_save_note').text("Snapshot error").removeClass('btn-success btn-warning').addClass('btn-danger');
+            });
+        return false;
+    }
 
     let data_sent = Object();
     let currentNoteTitle = $('#currentNoteTitle').text() ? $('#currentNoteTitle').text() : $('#currentNoteTitleInput').val();
@@ -1169,6 +1439,12 @@ $(document).ready(function(){
     collaborator_socket.emit('ping-note', { 'channel': 'case-' + cid + '-notes', 'note_id': note_id });
 
     setInterval(auto_remove_typing, 1500);
+
+    const flush_active_collab_note = function() {
+        flush_note_collab_leave_sync($('#currentNoteIDLabel').data('note_id'));
+    };
+    window.addEventListener('pagehide', flush_active_collab_note);
+    window.addEventListener('beforeunload', flush_active_collab_note);
 
     $(document).on('click', '#currentNoteTitle', function() {
         let title = $(this).text();

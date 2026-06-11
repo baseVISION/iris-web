@@ -1,0 +1,26 @@
+/* IRIS overrides for the Crepe editor.
+ * Crepe's image drag-resize handle is a ~4px strip at the bottom edge of an image, only
+ * visible on hover, which is easy to miss. Make it a clearly visible grab bar with a grip. */
+
+.milkdown .milkdown-image-block > .image-wrapper > .image-resize-handle {
+    height: 12px;
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 0 0 6px 6px;
+    cursor: row-resize;
+    transition: background 0.12s ease;
+}
+
+.milkdown .milkdown-image-block:hover > .image-wrapper > .image-resize-handle {
+    background: rgba(0, 0, 0, 0.16);
+}
+
+/* Centered grip indicator so it reads as a draggable handle. */
+.milkdown .milkdown-image-block > .image-wrapper > .image-resize-handle::after {
+    content: "";
+    display: block;
+    width: 40px;
+    height: 4px;
+    margin: 4px auto 0;
+    border-radius: 2px;
+    background: rgba(0, 0, 0, 0.4);
+}

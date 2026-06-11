@@ -14,6 +14,9 @@ let cid = null;
 let previousNoteTitle = null;
 let timer = null;
 let timeout = 5000;
+let gui_mode = false;   // true when the Milkdown (WYSIWYG) editor is active instead of ACE
+let editor_switching = false;   // guards against concurrent GUI/ACE toggles
+let gui_save_timer = null;   // dedicated autosave timer for GUI mode (note_detail shadows `timer`)
 
 
 const preventFormDefaultBehaviourOnSubmit = (event) => {
@@ -332,6 +335,12 @@ function note_revision_revert(_item, _rev) {
             return;
         }
         let revision = data.data;
+        // Reverting writes into the ACE editor; leave GUI mode so the reverted content is
+        // what gets shown and saved (save_note reads the active editor).
+        if (gui_mode) {
+            if (window.IrisMilkdown) { window.IrisMilkdown.destroy(); }
+            restore_ace_view();
+        }
         $('#currentNoteTitle').text(revision.note_title);
         note_editor.setValue(revision.note_content, -1);
         if (close_modal) {
@@ -395,6 +404,23 @@ async function note_detail(id) {
             }
 
             collaborator = new Collaborator( get_caseid() );
+
+            // Cancel any pending GUI autosave from the note we are leaving.
+            if (gui_save_timer) { clearTimeout(gui_save_timer); gui_save_timer = null; }
+
+            // Opening a note always starts in the ACE editor (default). Tear down any
+            // active (or in-flight) Milkdown GUI editor first, silently flushing its pending
+            // edits to the note being left (currentNoteIDLabel still holds the previous id).
+            if (gui_mode || editor_switching) {
+                if (window.IrisMilkdown && window.IrisMilkdown.isActive()) {
+                    let prev_id = $('#currentNoteIDLabel').data('note_id');
+                    silent_save_note(prev_id, window.IrisMilkdown.getMarkdown());
+                    window.IrisMilkdown.destroy();
+                }
+                editor_switching = false;
+                $('#btn_toggle_gui').prop('disabled', false);
+                restore_ace_view();
+            }
 
             // Destroy the note editor if it exists
             if (note_editor !== undefined && note_editor !== null) {
@@ -470,6 +496,23 @@ function refresh_ppl_list() {
     for (let [key, value] of ppl_viewing) {
         $('#ppl_list_viewing').append(get_avatar_initials(key, false, undefined, true));
     }
+    // GUI editor is single-user; disable the toggle (when not already in GUI) if others are viewing.
+    let multi = ppl_viewing.size > 1;
+    // If a collaborator appears while we're in GUI mode, cancel any pending autosave so it
+    // can't overwrite their edits (entry was already blocked; this covers the join-after case).
+    if (multi && gui_mode && gui_save_timer) {
+        clearTimeout(gui_save_timer);
+        gui_save_timer = null;
+    }
+    let $btn = $('#btn_toggle_gui');
+    if ($btn.length) {
+        $btn.prop('disabled', multi && !gui_mode);
+        if (multi && !gui_mode) {
+            $btn.attr('title', 'GUI editor disabled while others are viewing this note');
+        } else {
+            $btn.attr('title', gui_mode ? 'Switch to Markdown editor' : 'Switch to GUI (WYSIWYG) editor');
+        }
+    }
 }
 
 /* Delete a group of the dashboard */
@@ -512,6 +555,121 @@ function toggle_max_editor() {
     }
 }
 
+/* Returns the current note markdown from whichever editor is active (ACE or Milkdown). */
+function get_active_note_markdown() {
+    if (gui_mode && window.IrisMilkdown && window.IrisMilkdown.isActive()) {
+        let md = window.IrisMilkdown.getMarkdown();
+        if (md !== null && md !== undefined) {
+            return md;
+        }
+    }
+    return note_editor ? note_editor.getValue() : "not found";
+}
+
+/* Mark the note as having unsaved changes and schedule an autosave (used by Milkdown edits). */
+function mark_note_dirty() {
+    // If another user has started viewing this note, GUI edits can't be safely merged with
+    // the ACE-based collaboration stream, so don't autosave (avoids clobbering their edits).
+    if (ppl_viewing.size > 1) {
+        return;
+    }
+    $('#last_saved').addClass('btn-danger').removeClass('btn-success');
+    $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
+    $('#btn_save_note').text("Save").removeClass('btn-success').addClass('btn-warning').removeClass('btn-danger');
+    if (gui_save_timer) { clearTimeout(gui_save_timer); }
+    gui_save_timer = setTimeout(save_note, timeout);
+}
+
+/* Persist a note's markdown without mutating the current UI (used to flush GUI edits when
+   navigating away from a note; avoids stale "Saved" indicators landing on the next note). */
+function silent_save_note(noteId, md) {
+    if (!noteId) { return; }
+    let ret = get_custom_attributes_fields();
+    if (ret[0].length > 0) { return; }   // attribute validation errors: skip flush
+    let data_sent = Object();
+    data_sent['note_title'] = $('#currentNoteTitle').text() ? $('#currentNoteTitle').text() : $('#currentNoteTitleInput').val();
+    data_sent['csrf_token'] = $('#csrf_token').val();
+    data_sent['note_content'] = md;
+    data_sent['custom_attributes'] = ret[1];
+    post_request_api('/case/notes/update/' + noteId, JSON.stringify(data_sent), false, undefined, cid);
+}
+
+/* Restore the default ACE editor view (used when leaving GUI mode from several paths). */
+function restore_ace_view() {
+    $('#milkdown_container').hide();
+    // Reset to the default ACE split layout (in case edit_innote/toggle_max_editor changed it).
+    $('#container_note_content').show()
+        .removeClass('col-md-12 col-lg-12').addClass('col-md-12 col-lg-6');
+    $('#ctrd_notesum').show()
+        .removeClass('col-md-11 col-lg-11 ml-4 col-md-12 col-lg-12').addClass('col-md-12 col-lg-6');
+    $('.icon-note').show();
+    $('#notes_edition_btn').show();
+    gui_mode = false;
+    $('#btn_toggle_gui').removeClass('btn-primary').addClass('btn-light')
+        .attr('title', 'Switch to GUI (WYSIWYG) editor');
+}
+
+/* Toggle between the ACE markdown editor (default) and the Milkdown WYSIWYG editor. */
+async function toggle_editor_mode() {
+    if (typeof window.IrisMilkdown === 'undefined') {
+        notify_error('GUI editor is still loading, please retry in a moment.');
+        return;
+    }
+    if (editor_switching) {
+        return;
+    }
+
+    if (!gui_mode) {
+        // GUI mode uses single-editor semantics; block it during live collaboration since
+        // remote edits sync only through the ACE editor.
+        if (ppl_viewing.size > 1) {
+            notify_error('The GUI editor is disabled while others are viewing this note. Use the Markdown editor for collaborative editing.');
+            return;
+        }
+        editor_switching = true;
+        $('#btn_toggle_gui').prop('disabled', true);
+        let md = note_editor ? note_editor.getValue() : '';
+        let target_note = note_id;   // guard against the user switching notes mid-create
+        try {
+            await window.IrisMilkdown.create('#milkdown_root', md, mark_note_dirty);
+            if (note_id !== target_note) {
+                // A different note was opened while Crepe was initialising; discard this editor.
+                await window.IrisMilkdown.destroy();
+                return;
+            }
+            // Only flip the UI once Crepe is fully created.
+            $('#container_note_content').hide();
+            $('#ctrd_notesum').hide();        // Milkdown is itself the live view
+            $('#notes_edition_btn').hide();
+            $('.icon-note').hide();           // ACE-only preview/edit toggle pencil
+            $('#milkdown_container').show();
+            gui_mode = true;
+            $('#btn_toggle_gui').addClass('btn-primary').removeClass('btn-light')
+                .attr('title', 'Switch to Markdown editor');
+        } catch (e) {
+            notify_error('Failed to open the GUI editor: ' + (e && e.message ? e.message : e));
+            try { await window.IrisMilkdown.destroy(); } catch (err) { /* noop */ }
+        } finally {
+            editor_switching = false;
+            $('#btn_toggle_gui').prop('disabled', false);
+        }
+    } else {
+        editor_switching = true;
+        $('#btn_toggle_gui').prop('disabled', true);
+        try {
+            let md = window.IrisMilkdown.isActive() ? window.IrisMilkdown.getMarkdown() : null;
+            try { await window.IrisMilkdown.destroy(); } catch (e) { /* noop */ }
+            restore_ace_view();
+            if (note_editor && md !== null && md !== undefined) {
+                note_editor.setValue(md, -1);
+            }
+        } finally {
+            editor_switching = false;
+            $('#btn_toggle_gui').prop('disabled', false);
+        }
+    }
+}
+
 /* Save a note into db */
 function save_note() {
     clear_api_error();
@@ -522,7 +680,7 @@ function save_note() {
     let currentNoteTitle = $('#currentNoteTitle').text() ? $('#currentNoteTitle').text() : $('#currentNoteTitleInput').val();
     data_sent['note_title'] = currentNoteTitle;
     data_sent['csrf_token'] = $('#csrf_token').val();
-    data_sent['note_content'] = note_editor ? note_editor.getValue() : "not found";
+    data_sent['note_content'] = get_active_note_markdown();
     let ret = get_custom_attributes_fields();
     let has_error = ret[0].length > 0;
     let attributes = ret[1];
@@ -559,6 +717,7 @@ function save_note() {
 
 /* Span for note edition */
 function edit_innote() {
+    if (gui_mode) { return; }   // the ACE preview/edit split does not apply in GUI mode
     $('#container_note_content').toggle();
     if ($('#container_note_content').is(':visible')) {
         $('#notes_edition_btn').show(100);
@@ -602,8 +761,8 @@ async function load_directories() {
 }
 
 function download_note() {
-    // Use directly the content of the note editor
-    let content = note_editor.getValue();
+    // Use the content of whichever editor is currently active (ACE or Milkdown)
+    let content = get_active_note_markdown();
     let filename = $('#currentNoteTitle').text() + '.md';
     let blob = new Blob([content], {type: 'text/plain'});
     let url = window.URL.createObjectURL(blob);

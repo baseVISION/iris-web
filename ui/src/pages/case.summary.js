@@ -376,7 +376,7 @@ async function open_summary_split() {
         }
         $('#ctrd_casesum').hide();
         $('#summary_split_container').show();
-        $('#sum_refresh_btn').html('Save');
+        $('#sum_refresh_btn').html('Refresh').addClass('d-none').hide();
         $('#sum_edit_btn').html('Close editor');
         summary_split.focus();
     } catch (e) {
@@ -415,7 +415,7 @@ async function close_summary_split() {
 
     $('#summary_split_container').hide();
     $('#ctrd_casesum').show();
-    $('#sum_refresh_btn').html('Refresh');
+    $('#sum_refresh_btn').html('Refresh').removeClass('d-none').show();
     $('#sum_edit_btn').html('Edit');
 }
 

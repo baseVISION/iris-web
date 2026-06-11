@@ -636,6 +636,15 @@
     background: #34d399;
 }
 
+/* Solo = connected & saving, but no other collaborators (muted neutral grey) */
+.iris-collab-status.is-solo {
+    background: #9aa0a6;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-collab-status.is-solo {
+    background: #5c6370;
+}
+
 .iris-collab-status.is-syncing {
     background: #e5a50a;
     opacity: 0.85;

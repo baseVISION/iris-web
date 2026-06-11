@@ -111,8 +111,6 @@ function note_collab_payload(markdown) {
 function note_collab_mark_persisted(hash) {
     note_collab_last_persist_hash = hash;
     note_dirty = false;
-    $('#last_saved').removeClass('btn-danger').addClass('btn-success');
-    $('#last_saved > i').attr('class', "fa-solid fa-file-circle-check");
     $("#content_last_saved_by").text('Last persisted by you');
     $('#btn_save_note').text("Snapshot").removeClass('btn-success btn-danger btn-warning').addClass('btn-light');
 }
@@ -233,8 +231,6 @@ function mark_note_collab_dirty() {
     const hash = hash_note_content(md);
     note_dirty = true;
     note_collab_changed_since_snapshot = true;
-    $('#last_saved').addClass('btn-danger').removeClass('btn-success');
-    $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
     $('#btn_save_note').text(hash === note_collab_last_snapshot_hash ? "Snapshot" : "Snapshot")
         .removeClass('btn-success btn-danger')
         .addClass('btn-warning');
@@ -312,8 +308,6 @@ function Collaborator( session_id, n_id ) {
             .then(function () {
                 $("#content_last_saved_by").text("Last saved by " + data.last_saved);
                 $('#btn_save_note').text("Saved").addClass('btn-success').removeClass('btn-danger').removeClass('btn-warning');
-                $('#last_saved').removeClass('btn-danger').addClass('btn-success');
-                $('#last_saved > i').attr('class', "fa-solid fa-file-circle-check");
             });
 
     }.bind());
@@ -752,8 +746,6 @@ async function note_detail(id) {
             $('#object_comments_number').text(data.data.comments.length > 0 ? data.data.comments.length: '');
             $('#content_last_saved_by').text('');
             $('#content_typing').text('');
-            $('#last_saved').removeClass('btn-danger').addClass('btn-success');
-            $('#last_saved > i').attr('class', "fa-solid fa-file-circle-check");
             $('#btn_save_note').text("Snapshot").removeClass('btn-success btn-danger btn-warning').addClass('btn-light');
             note_dirty = false;
 
@@ -822,8 +814,6 @@ function mark_note_dirty(markdown) {
 
     note_dirty = true;
     $("#content_typing").text("You are typing..");
-    $('#last_saved').addClass('btn-danger').removeClass('btn-success');
-    $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
     $('#btn_save_note').text("Save").removeClass('btn-success').addClass('btn-warning').removeClass('btn-danger');
     if (timer) { clearTimeout(timer); }
     timer = setTimeout(save_note, timeout);
@@ -884,8 +874,6 @@ function save_note() {
 
     post_request_api('/case/notes/update/'+ n_id, JSON.stringify(data_sent), false, undefined, cid, function() {
         $('#btn_save_note').text("Error saving!").removeClass('btn-success').addClass('btn-danger').removeClass('btn-danger');
-        $('#last_saved > i').attr('class', "fa-solid fa-file-circle-xmark");
-        $('#last_saved').addClass('btn-danger').removeClass('btn-success');
     })
     .done((data) => {
         if (api_request_failed(data)) {
@@ -897,9 +885,7 @@ function save_note() {
         }
         note_dirty = false;
         $('#btn_save_note').text("Saved").addClass('btn-success').removeClass('btn-danger').removeClass('btn-warning');
-        $('#last_saved').removeClass('btn-danger').addClass('btn-success');
         $("#content_last_saved_by").text('Last saved by you');
-        $('#last_saved > i').attr('class', "fa-solid fa-file-circle-check");
 
         if (collaborator) {
             collaborator.save(n_id);

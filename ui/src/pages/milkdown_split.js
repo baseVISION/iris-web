@@ -528,6 +528,7 @@ class SplitEditor {
         const peers = this.getOtherCollabUsers();
         const visiblePeers = peers.slice(0, 4);
         this.collabAvatars.innerHTML = '';
+        this.collabAvatars.hidden = !visiblePeers.length;
         visiblePeers.forEach((user) => {
             const avatar = document.createElement('span');
             avatar.className = 'iris-collab-avatar';
@@ -549,12 +550,20 @@ class SplitEditor {
 
         const names = peers.map((user) => user.name).filter(Boolean);
         const labels = {
-            syncing: 'Syncing',
+            syncing: 'Syncing\u2026',
             live: 'Live',
             reconnecting: 'Reconnecting',
             offline: 'Offline',
         };
         const stateText = labels[this.collabState] || labels.syncing;
+        if (this.collabStatusDot) {
+            const dotState = this.collabState === 'live' && !peers.length ? 'solo' : (this.collabState || 'syncing');
+            this.collabStatusDot.className = `iris-collab-status is-${dotState}`;
+        }
+        if (this.collabState === 'live' && !peers.length) {
+            this.collabStatusText.textContent = 'Connected';
+            return;
+        }
         if (!names.length) {
             this.collabStatusText.textContent = stateText;
             return;

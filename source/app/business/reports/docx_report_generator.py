@@ -57,6 +57,22 @@ _COLOR_POS = _RPR_ORDER.index('color')
 # Above this size, skip syntax highlighting (run explosion / perf) and render plain.
 _MAX_CODE_HIGHLIGHT_CHARS = 50000
 
+# Markdown tables: the base renderer emits tblW=auto + a single grid column, so Word shrinks
+# the table to its content (compressed). We render them 100% wide with a fixed layout and one
+# equal grid column per markdown column. Explicit borders (matching the ReportMain look) ensure
+# the boxes show whether cells are populated or not, on any template.
+_TABLE_TOTAL_WIDTH_TWIPS = 9638  # ~full text width (Letter, 1in margins)
+_TABLE_BORDERS = (
+    '<w:tblBorders>'
+    '<w:top w:val="single" w:sz="4" w:space="0" w:color="7F7F7F" w:themeColor="text1" w:themeTint="80"/>'
+    '<w:left w:val="single" w:sz="4" w:space="0" w:color="7F7F7F" w:themeColor="text1" w:themeTint="80"/>'
+    '<w:bottom w:val="single" w:sz="4" w:space="0" w:color="7F7F7F" w:themeColor="text1" w:themeTint="80"/>'
+    '<w:right w:val="single" w:sz="4" w:space="0" w:color="7F7F7F" w:themeColor="text1" w:themeTint="80"/>'
+    '<w:insideH w:val="single" w:sz="4" w:space="0" w:color="7F7F7F" w:themeColor="text1" w:themeTint="80"/>'
+    '<w:insideV w:val="single" w:sz="4" w:space="0" w:color="7F7F7F" w:themeColor="text1" w:themeTint="80"/>'
+    '</w:tblBorders>'
+)
+
 
 @lru_cache(maxsize=1)
 def _pygments_style():
@@ -202,6 +218,37 @@ class MarkdownImageDocxRenderer(DocxRenderer):
             return super().render_block_code(token)
 
         return make_paragraph(self.style.code, ''.join(runs))
+
+    def render_table(self, token):
+        """Render a markdown table spanning the full page width with equal columns.
+
+        The base renderer leaves the table at tblW=auto (Word shrinks it to its content, so it
+        looks compressed) with a single grid column. Here we emit a 100%-wide, fixed-layout
+        table with one equal grid column per markdown column, keeping the ReportMain style and
+        explicit borders so the table renders evenly regardless of how full the cells are.
+        """
+        ncols = len(getattr(token, 'column_align', None) or [])
+        header_tok = getattr(token, 'header', None)
+        if not ncols and header_tok is not None:
+            ncols = len(getattr(header_tok, 'children', None) or [])
+        if ncols < 1:
+            ncols = 1
+
+        header = self.render(header_tok) if header_tok is not None else ''
+        content = self.render_inner(token)
+
+        col_w = max(1, _TABLE_TOTAL_WIDTH_TWIPS // ncols)
+        grid = ''.join('<w:gridCol w:w="{}"/>'.format(col_w) for _ in range(ncols))
+        tbl_pr = (
+            '<w:tblPr>'
+            '<w:tblStyle w:val="ReportMain"/>'
+            '<w:tblW w:type="pct" w:w="5000"/>'
+            + _TABLE_BORDERS +
+            '<w:tblLayout w:type="fixed"/>'
+            '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>'
+            '</w:tblPr>'
+        )
+        return '<w:tbl>{}<w:tblGrid>{}</w:tblGrid>{}{}</w:tbl>'.format(tbl_pr, grid, header, content)
 
     def render_image(self, token):
         if self._image_handler is None:

@@ -160,7 +160,15 @@ def _process_md_images_for_docx(markdown_text):
                 out.append(line)            # opening fence, untouched
             else:
                 line = _DOCX_DATASTORE_IMAGE.sub(_docx_rewrite_datastore_image, line)
-                line = _HTML_BR.sub('\n', line)
+                if line.lstrip().startswith('|'):
+                    # GFM table row: Milkdown serialises empty cells as <br/>. Converting those
+                    # to '\n' (as below) would inject a newline mid-row and shatter the table,
+                    # so empty boxes broke the export. Collapse to a space instead: the cell
+                    # stays empty and the row stays on one line, so the table renders whether
+                    # cells are populated or not.
+                    line = _HTML_BR.sub(' ', line)
+                else:
+                    line = _HTML_BR.sub('\n', line)
                 out.append(line)
         else:
             out.append(line)                # inside a code block, untouched

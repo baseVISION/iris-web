@@ -12,13 +12,24 @@ let is_typing = '';
 
 const SUMMARY_AUTOSAVE_MS = 2000;
 const SUMMARY_COLLAB_WINDOW_MS = 15000;
+const SUMMARY_SPLIT_EDITOR_LOAD_TIMEOUT_MS = 10000;
 
 function wait_for_split_editor() {
     if (window.IrisSplitEditor) {
         return Promise.resolve();
     }
-    return new Promise((resolve) => {
-        window.addEventListener('iris-split-editor-ready', resolve, { once: true });
+    return new Promise((resolve, reject) => {
+        const on_ready = function() {
+            clearTimeout(timeout);
+            resolve();
+        };
+        const timeout = window.setTimeout(function() {
+            window.removeEventListener('iris-split-editor-ready', on_ready);
+            notify_error('GUI editor failed to load');
+            reject(new Error('GUI editor failed to load'));
+        }, SUMMARY_SPLIT_EDITOR_LOAD_TIMEOUT_MS);
+
+        window.addEventListener('iris-split-editor-ready', on_ready, { once: true });
     });
 }
 
@@ -44,12 +55,12 @@ function Collaborator(session_id) {
             clearTimeout(summary_save_timer);
             summary_save_timer = null;
         }
-        sync_editor(true);
+        sync_editor(true).catch(function() {});
     });
 
     this.collaboration_socket.on('save', function(data) {
         $('#content_last_saved_by').text('Last saved by ' + data.last_saved);
-        sync_editor(true);
+        sync_editor(true).catch(function() {});
     });
 }
 
@@ -102,6 +113,12 @@ function set_saved_status(text, saved) {
         .toggleClass('badge-danger', !saved);
 }
 
+function reset_saved_status() {
+    $('#last_saved')
+        .text('')
+        .removeClass('badge-success badge-danger');
+}
+
 function get_active_summary_markdown() {
     if (summary_split) {
         summary_current_markdown = summary_split.getMarkdown();
@@ -143,7 +160,7 @@ function schedule_summary_autosave() {
             set_saved_status('Not saved (others editing)', false);
             return;
         }
-        sync_editor(false);
+        sync_editor(false).catch(function() {});
     }, SUMMARY_AUTOSAVE_MS);
 }
 
@@ -166,8 +183,8 @@ async function open_summary_split() {
         return;
     }
     summary_opening = true;
-    await wait_for_split_editor();
     try {
+        await wait_for_split_editor();
         summary_applying_remote = true;
         summary_dirty = false;
         summary_split = await window.IrisSplitEditor.create({
@@ -184,6 +201,8 @@ async function open_summary_split() {
         $('#sum_refresh_btn').html('Save');
         $('#sum_edit_btn').html('Close editor');
         summary_split.focus();
+    } catch (e) {
+        return;
     } finally {
         summary_applying_remote = false;
         summary_opening = false;
@@ -201,7 +220,11 @@ async function close_summary_split() {
 
     summary_current_markdown = summary_split.getMarkdown();
     render_summary_preview(summary_current_markdown);
-    await sync_editor(false);
+    try {
+        await sync_editor(false);
+    } catch (e) {
+        return;
+    }
     await summary_split.destroy();
     summary_split = null;
     summary_dirty = false;
@@ -228,9 +251,16 @@ function sync_editor(no_check) {
     set_saved_status('Syncing..', false);
 
     return get_request_api('/case/summary/fetch')
+        .catch((error) => {
+            reset_saved_status();
+            notify_error((error.responseJSON && error.responseJSON.message) || error.message || 'Failed to fetch summary');
+            throw error;
+        })
         .then((data) => {
             if (data.status !== 'success') {
-                return;
+                reset_saved_status();
+                notify_error(data.message || 'Failed to fetch summary');
+                throw new Error(data.message || 'Failed to fetch summary');
             }
 
             if (no_check) {
@@ -288,32 +318,39 @@ function sync_editor(no_check) {
                 csrf_token: $('#csrf_token').val(),
             };
 
-            return $.ajax({
-                url: '/case/summary/update' + case_param(),
-                type: 'POST',
-                dataType: 'json',
-                contentType: 'application/json;charset=UTF-8',
-                data: JSON.stringify(payload),
-                success: function(update_data) {
-                    if (update_data.status === 'success') {
-                        if (collaborator) {
-                            collaborator.save();
+            return new Promise((resolve, reject) => {
+                $.ajax({
+                    url: '/case/summary/update' + case_param(),
+                    type: 'POST',
+                    dataType: 'json',
+                    contentType: 'application/json;charset=UTF-8',
+                    data: JSON.stringify(payload),
+                    success: function(update_data) {
+                        if (update_data.status === 'success') {
+                            if (collaborator) {
+                                collaborator.save();
+                            }
+                            summary_dirty = false;
+                            summary_current_markdown = st;
+                            render_summary_preview(st);
+                            $('#content_last_sync').text('Last synced: ' + new Date().toLocaleTimeString());
+                            $('#fetched_crc').val(update_data.data);
+                            set_saved_status('Changes saved', true);
+                            resolve(update_data);
+                        } else {
+                            const message = update_data.message || 'Unable to save content to remote server';
+                            notify_error(message);
+                            set_saved_status('Error saving !', false);
+                            reject(new Error(message));
                         }
-                        summary_dirty = false;
-                        summary_current_markdown = st;
-                        render_summary_preview(st);
-                        $('#content_last_sync').text('Last synced: ' + new Date().toLocaleTimeString());
-                        $('#fetched_crc').val(update_data.data);
-                        set_saved_status('Changes saved', true);
-                    } else {
-                        notify_error('Unable to save content to remote server');
+                    },
+                    error: function(error) {
+                        const message = (error.responseJSON && error.responseJSON.message) || 'Failed to save summary';
+                        notify_error(message);
                         set_saved_status('Error saving !', false);
-                    }
-                },
-                error: function(error) {
-                    notify_error(error.responseJSON.message);
-                    set_saved_status('Error saving !', false);
-                },
+                        reject(error || new Error(message));
+                    },
+                });
             });
         });
 }
@@ -384,7 +421,7 @@ function manage_case(case_id) {
 
 $(document).ready(function() {
     body_loaded();
-    sync_editor(true);
+    sync_editor(true).catch(function() {});
     setInterval(auto_remove_typing, 2000);
 
     const review_state = $('#caseReviewState');

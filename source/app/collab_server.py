@@ -30,7 +30,9 @@ from app.models.authorization import CaseAccessLevel, User
 from app.models.models import Notes
 
 
-COLLAB_PATH_RE = re.compile(r"^/collab/(?P<room>note-(?P<note_id>[0-9]+))/?$")
+COLLAB_PATH_RE = re.compile(
+    r"^/collab/(?P<room>(?:note-(?P<note_id>[0-9]+)|summary-(?P<summary_case_id>[0-9]+)))/?$"
+)
 COLLAB_STORE_DIR = Path(
     os.environ.get(
         "IRIS_COLLAB_STORE_PATH",
@@ -46,7 +48,7 @@ COLLAB_STORE_DB = COLLAB_STORE_DIR / "yjs.sqlite3"
 class AuthorizedRoom(NamedTuple):
     room_name: str
     user_id: int
-    note_id: int
+    note_id: int | None
     case_id: int
 
 
@@ -183,7 +185,8 @@ def authorize_scope(scope: dict[str, Any]) -> AuthorizedRoom | None:
         return None
 
     room_name = match.group("room")
-    note_id = int(match.group("note_id"))
+    note_id = int(match.group("note_id")) if match.group("note_id") else None
+    summary_case_id = int(match.group("summary_case_id")) if match.group("summary_case_id") else None
     session_data = _decode_session_cookie(scope)
     if not session_data:
         flask_app.logger.warning(
@@ -211,15 +214,31 @@ def authorize_scope(scope: dict[str, Any]) -> AuthorizedRoom | None:
             )
             return None
 
-        note = Notes.query.with_entities(Notes.note_case_id).filter(
-            Notes.note_id == note_id
-        ).first()
-        if note is None or note.note_case_id is None:
-            flask_app.logger.warning("Rejected collab websocket for %s: unknown note", room_name)
+        if note_id is not None:
+            note = Notes.query.with_entities(Notes.note_case_id).filter(
+                Notes.note_id == note_id
+            ).first()
+            if note is None or note.note_case_id is None:
+                flask_app.logger.warning("Rejected collab websocket for %s: unknown note", room_name)
+                return None
+
+            case_id = int(note.note_case_id)
+        elif summary_case_id is not None:
+            case_id = summary_case_id
+        else:
+            flask_app.logger.warning("Rejected collab websocket for %s: unknown room type", room_name)
             return None
 
-        case_id = int(note.note_case_id)
-        access = ac_fast_check_user_has_case_access(user_id, case_id, [CaseAccessLevel.full_access])
+        try:
+            access = ac_fast_check_user_has_case_access(user_id, case_id, [CaseAccessLevel.full_access])
+        except Exception:
+            flask_app.logger.exception(
+                "Rejected collab websocket for %s: access check failed for user %s case %s",
+                room_name,
+                user_id,
+                case_id,
+            )
+            return None
         if access is None:
             flask_app.logger.warning(
                 "Rejected collab websocket for %s: user %s lacks full access to case %s",

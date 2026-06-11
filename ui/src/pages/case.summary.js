@@ -8,11 +8,160 @@ let summary_dirty = false;
 let summary_save_timer = null;
 let summary_current_markdown = '';
 let summary_collab_active_until = 0;
+let summary_collab_persist_timer = null;
+let summary_collab_last_persist_hash = null;
 let is_typing = '';
 
 const SUMMARY_AUTOSAVE_MS = 2000;
+const SUMMARY_COLLAB_PERSIST_DEBOUNCE_MS = 4000;
 const SUMMARY_COLLAB_WINDOW_MS = 15000;
 const SUMMARY_SPLIT_EDITOR_LOAD_TIMEOUT_MS = 10000;
+const SUMMARY_COLLAB_COLORS = [
+    '#0f766e',
+    '#2563eb',
+    '#7c3aed',
+    '#c2410c',
+    '#be123c',
+    '#047857',
+    '#4338ca',
+    '#b45309',
+    '#0369a1',
+    '#a21caf',
+];
+
+function hash_summary_collab_string(value) {
+    let hash = 0;
+    const str = value || 'IRIS';
+    for (let i = 0; i < str.length; i += 1) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return Math.abs(hash);
+}
+
+function hash_summary_content(value) {
+    const text = value || '';
+    return `${text.length}:${hash_summary_collab_string(text)}`;
+}
+
+function get_summary_collab_user() {
+    let whoami = null;
+    if (typeof userWhoami !== 'undefined' && userWhoami) {
+        whoami = userWhoami;
+    } else {
+        try {
+            whoami = JSON.parse(sessionStorage.getItem('userWhoami'));
+        } catch (e) {
+            whoami = null;
+        }
+    }
+
+    const name = (whoami && (whoami.user_name || whoami.user_login))
+        || $('#current_username').text()
+        || 'IRIS user';
+    return {
+        name,
+        color: SUMMARY_COLLAB_COLORS[hash_summary_collab_string(name) % SUMMARY_COLLAB_COLORS.length],
+    };
+}
+
+function is_summary_collab_active() {
+    return !!(summary_split
+        && typeof summary_split.isCollabActive === 'function'
+        && summary_split.isCollabActive());
+}
+
+function clear_summary_collab_timers() {
+    if (summary_collab_persist_timer) {
+        clearTimeout(summary_collab_persist_timer);
+        summary_collab_persist_timer = null;
+    }
+}
+
+function reset_summary_collab_state(markdown) {
+    clear_summary_collab_timers();
+    summary_collab_last_persist_hash = hash_summary_content(markdown || '');
+}
+
+function summary_collab_payload(markdown) {
+    return {
+        csrf_token: $('#csrf_token').val(),
+        case_description: markdown || '',
+        client_hash: hash_summary_content(markdown || ''),
+    };
+}
+
+function mark_summary_collab_persisted(hash, data) {
+    summary_collab_last_persist_hash = hash;
+    summary_dirty = false;
+    if (data && data.data && data.data.crc32 !== undefined) {
+        $('#fetched_crc').val(data.data.crc32.toString());
+    }
+    set_saved_status('Changes saved', true);
+    $('#content_last_sync').text('Last synced: ' + new Date().toLocaleTimeString());
+    $('#content_last_saved_by').text('Last persisted by you');
+}
+
+function summary_collab_persist(markdown, options = {}) {
+    const md = markdown !== undefined ? markdown : get_active_summary_markdown();
+    const hash = hash_summary_content(md);
+    if (!options.force && hash === summary_collab_last_persist_hash) {
+        return Promise.resolve({ skipped: true, hash });
+    }
+
+    return new Promise((resolve, reject) => {
+        post_request_api(
+            '/case/summary/collab/persist',
+            JSON.stringify(summary_collab_payload(md)),
+            false,
+            undefined,
+            get_caseid()
+        )
+        .done((data) => {
+            if (api_request_failed(data)) {
+                reject(data);
+                return;
+            }
+            summary_current_markdown = md;
+            render_summary_preview(md);
+            mark_summary_collab_persisted(hash, data);
+            resolve({ skipped: false, hash, data });
+        })
+        .fail(reject);
+    });
+}
+
+function schedule_summary_collab_persist() {
+    if (summary_collab_persist_timer) {
+        clearTimeout(summary_collab_persist_timer);
+    }
+    summary_collab_persist_timer = setTimeout(() => {
+        summary_collab_persist_timer = null;
+        summary_collab_persist().catch(() => {
+            set_saved_status('Error saving !', false);
+        });
+    }, SUMMARY_COLLAB_PERSIST_DEBOUNCE_MS);
+}
+
+function summary_collab_sync_post(markdown) {
+    try {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `/case/summary/collab/persist?cid=${encodeURIComponent(get_caseid())}`, false);
+        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+        xhr.send(JSON.stringify(summary_collab_payload(markdown)));
+        return xhr.status >= 200 && xhr.status < 300;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function flush_summary_collab_before_close(markdown) {
+    clear_summary_collab_timers();
+    if (!is_summary_collab_active()) {
+        return;
+    }
+    await summary_collab_persist(markdown, { force: true }).catch(() => {});
+}
 
 function wait_for_split_editor() {
     if (window.IrisSplitEditor) {
@@ -39,6 +188,9 @@ function Collaborator(session_id) {
     this.collaboration_socket.emit('join', { 'channel': this.channel });
 
     this.collaboration_socket.on('change', function(data) {
+        if (is_summary_collab_active()) {
+            return;
+        }
         summary_collab_active_until = Date.now() + SUMMARY_COLLAB_WINDOW_MS;
         if (summary_save_timer) {
             clearTimeout(summary_save_timer);
@@ -50,6 +202,9 @@ function Collaborator(session_id) {
     });
 
     this.collaboration_socket.on('clear_buffer', function() {
+        if (is_summary_collab_active()) {
+            return;
+        }
         summary_collab_active_until = Date.now() + SUMMARY_COLLAB_WINDOW_MS;
         if (summary_save_timer) {
             clearTimeout(summary_save_timer);
@@ -59,6 +214,9 @@ function Collaborator(session_id) {
     });
 
     this.collaboration_socket.on('save', function(data) {
+        if (is_summary_collab_active()) {
+            return;
+        }
         $('#content_last_saved_by').text('Last saved by ' + data.last_saved);
         sync_editor(true).catch(function() {});
     });
@@ -170,6 +328,12 @@ function on_summary_split_change(md) {
     }
     summary_current_markdown = md || '';
     summary_dirty = true;
+    if (is_summary_collab_active()) {
+        set_saved_status('Changes not saved', false);
+        $('#content_typing').text('Collaborative edit pending persistence');
+        schedule_summary_collab_persist();
+        return;
+    }
     if (Date.now() < summary_collab_active_until) {
         set_saved_status('Not saved (others editing)', false);
         return;
@@ -187,7 +351,8 @@ async function open_summary_split() {
         await wait_for_split_editor();
         summary_applying_remote = true;
         summary_dirty = false;
-        summary_split = await window.IrisSplitEditor.create({
+        reset_summary_collab_state(summary_current_markdown || '');
+        const split_options = {
             container: '#summary_split',
             sourcePane: '#summary_source',
             previewPane: '#summary_preview',
@@ -195,7 +360,20 @@ async function open_summary_split() {
             viewToggle: '#summary_view_toggle',
             initialMarkdown: summary_current_markdown || '',
             onChange: on_summary_split_change,
-        });
+            collab: {
+                room: 'summary-' + get_caseid(),
+                user: get_summary_collab_user(),
+                onStatus: function(status) {
+                    $('#summary_split').attr('data-collab-status', status || '');
+                },
+            },
+        };
+        try {
+            summary_split = await window.IrisSplitEditor.create(split_options);
+        } catch (collab_error) {
+            delete split_options.collab;
+            summary_split = await window.IrisSplitEditor.create(split_options);
+        }
         $('#ctrd_casesum').hide();
         $('#summary_split_container').show();
         $('#sum_refresh_btn').html('Save');
@@ -221,13 +399,19 @@ async function close_summary_split() {
     summary_current_markdown = summary_split.getMarkdown();
     render_summary_preview(summary_current_markdown);
     try {
-        await sync_editor(false);
+        if (is_summary_collab_active()) {
+            await flush_summary_collab_before_close(summary_current_markdown);
+        } else {
+            await sync_editor(false);
+        }
     } catch (e) {
         return;
     }
     await summary_split.destroy();
     summary_split = null;
     summary_dirty = false;
+    clear_summary_collab_timers();
+    $('#summary_split').removeAttr('data-collab-status');
 
     $('#summary_split_container').hide();
     $('#ctrd_casesum').show();
@@ -248,6 +432,12 @@ async function edit_case_summary() {
  * Check if there are external changes first.
  */
 function sync_editor(no_check) {
+    if (is_summary_collab_active()) {
+        set_saved_status('Syncing..', false);
+        clear_summary_collab_timers();
+        return summary_collab_persist(undefined, { force: true });
+    }
+
     set_saved_status('Syncing..', false);
 
     return get_request_api('/case/summary/fetch')
@@ -423,6 +613,12 @@ $(document).ready(function() {
     body_loaded();
     sync_editor(true).catch(function() {});
     setInterval(auto_remove_typing, 2000);
+    window.addEventListener('beforeunload', function() {
+        if (!is_summary_collab_active()) {
+            return;
+        }
+        summary_collab_sync_post(get_active_summary_markdown());
+    });
 
     const review_state = $('#caseReviewState');
     if (review_state.length > 0) {

@@ -39,12 +39,15 @@
     flex-direction: column;
 }
 
-/* Notes full-page: let the shell fill the viewport via flex */
+/* Notes full-page: bounded viewport height so the split fills the page
+   without growing with content — each pane scrolls independently inside it. */
 .note-body {
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
+    max-height: calc(100vh - 188px);
+    overflow: hidden;
 }
 
 .iris-split-shell {
@@ -52,6 +55,7 @@
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
+    overflow: hidden;
 }
 
 /* Summary card shell: stay bounded so it doesn't blow out the card */

@@ -111,6 +111,7 @@ class SplitEditor {
         this.collabStateTimer = null;
         this.sourceEditabilityCompartment = new Compartment();
         this.sourceReadOnly = false;
+        this.sourceScrollFrame = null;
     }
 
     async create({ container, sourcePane, previewPane, divider, viewToggle, initialMarkdown = '', onChange, collab = null }) {
@@ -269,7 +270,12 @@ class SplitEditor {
             return;
         }
 
+        const preserveSourceScroll = this.origin === 'milkdown' || !this.isSourceFocused();
         const scrollTop = this.sourceView.scrollDOM.scrollTop;
+        const scrollLeft = this.sourceView.scrollDOM.scrollLeft;
+        const scrollSnapshot = preserveSourceScroll && typeof this.sourceView.scrollSnapshot === 'function'
+            ? this.sourceView.scrollSnapshot()
+            : null;
         const selection = this.sourceView.state.selection;
         const docLength = (md || '').length;
         const clampPosition = (pos) => Math.min(Math.max(pos, 0), docLength);
@@ -278,7 +284,12 @@ class SplitEditor {
             clampPosition(range.head)
         ));
 
-        this.sourceView.dispatch({
+        if (this.sourceScrollFrame) {
+            window.cancelAnimationFrame(this.sourceScrollFrame);
+            this.sourceScrollFrame = null;
+        }
+
+        const transaction = {
             changes: {
                 from: 0,
                 to: this.sourceView.state.doc.length,
@@ -286,8 +297,24 @@ class SplitEditor {
             },
             selection: EditorSelection.create(ranges, selection.mainIndex),
             annotations: Transaction.addToHistory.of(false),
-        });
-        this.sourceView.scrollDOM.scrollTop = scrollTop;
+        };
+        if (scrollSnapshot) {
+            transaction.effects = scrollSnapshot;
+        }
+
+        this.sourceView.dispatch(transaction);
+
+        if (preserveSourceScroll) {
+            this.sourceView.scrollDOM.scrollTop = scrollTop;
+            this.sourceView.scrollDOM.scrollLeft = scrollLeft;
+            this.sourceScrollFrame = window.requestAnimationFrame(() => {
+                this.sourceScrollFrame = null;
+                if (!this.destroyed && this.sourceView) {
+                    this.sourceView.scrollDOM.scrollTop = scrollTop;
+                    this.sourceView.scrollDOM.scrollLeft = scrollLeft;
+                }
+            });
+        }
     }
 
     isSourceFocused() {
@@ -637,6 +664,10 @@ class SplitEditor {
     async destroy() {
         this.destroyed = true;
         this.flush();
+        if (this.sourceScrollFrame) {
+            window.cancelAnimationFrame(this.sourceScrollFrame);
+            this.sourceScrollFrame = null;
+        }
         if (this.collabStateTimer) {
             clearTimeout(this.collabStateTimer);
             this.collabStateTimer = null;

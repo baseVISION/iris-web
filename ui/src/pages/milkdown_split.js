@@ -1,6 +1,6 @@
 import { basicSetup } from 'codemirror';
 import { markdown } from '@codemirror/lang-markdown';
-import { EditorSelection, EditorState, Transaction } from '@codemirror/state';
+import { Compartment, EditorSelection, EditorState, Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 
 const SOURCE_SYNC_MS = 250;
@@ -109,6 +109,8 @@ class SplitEditor {
         this.collabStateSince = 0;
         this.pendingCollabState = null;
         this.collabStateTimer = null;
+        this.sourceEditabilityCompartment = new Compartment();
+        this.sourceReadOnly = false;
     }
 
     async create({ container, sourcePane, previewPane, divider, viewToggle, initialMarkdown = '', onChange, collab = null }) {
@@ -146,6 +148,7 @@ class SplitEditor {
             return this;
         }
 
+        this.sourceReadOnly = this.computeSourceReadOnly();
         this.sourceView = new EditorView({
             parent: sourceMount,
             state: EditorState.create({
@@ -153,8 +156,7 @@ class SplitEditor {
                 extensions: [
                     basicSetup,
                     markdown(),
-                    EditorState.readOnly.of(this.collabActive),
-                    EditorView.editable.of(!this.collabActive),
+                    this.sourceEditabilityCompartment.of(this.getSourceEditabilityExtensions(this.sourceReadOnly)),
                     EditorView.lineWrapping,
                     EditorView.updateListener.of((update) => this.handleSourceUpdate(update)),
                     EditorView.theme({
@@ -171,6 +173,7 @@ class SplitEditor {
             if (typeof window.IrisMilkdown.getCollabAwarenessUsers === 'function') {
                 this.handleCollabAwareness(window.IrisMilkdown.getCollabAwarenessUsers());
             }
+            this.updateSourceReadOnly();
         }
 
         return this;
@@ -201,7 +204,7 @@ class SplitEditor {
     }
 
     handleSourceUpdate(update) {
-        if (!update.docChanged || this.origin === 'milkdown' || this.collabActive) {
+        if (!update.docChanged || this.origin === 'milkdown' || this.isSourceReadOnly()) {
             return;
         }
         this.pendingSourceMd = update.state.doc.toString();
@@ -232,7 +235,7 @@ class SplitEditor {
 
         if (
             this.origin === 'source' ||
-            this.isSourceFocused() ||
+            (!this.isSourceReadOnly() && this.isSourceFocused()) ||
             this.sourceView.state.doc.toString() === markdown
         ) {
             this.emitChange(markdown);
@@ -246,7 +249,7 @@ class SplitEditor {
     }
 
     applyPendingSource() {
-        if (this.collabActive) {
+        if (this.isSourceReadOnly()) {
             this.pendingSourceMd = null;
             return;
         }
@@ -307,6 +310,7 @@ class SplitEditor {
         this.installPresenceBar(collab.presenceTarget);
         this.installSourceLiveViewBadge();
         this.applyCollabState('syncing', true);
+        this.updateSourceReadOnly();
     }
 
     installPresenceBar(targetRef) {
@@ -359,11 +363,12 @@ class SplitEditor {
             return;
         }
 
-        this.sourcePane.classList.add('is-collab-readonly');
         this.collabSourceBadge = document.createElement('div');
         this.collabSourceBadge.className = 'iris-collab-liveview-badge';
         this.collabSourceBadge.textContent = 'Live view · edit in WYSIWYG';
+        this.collabSourceBadge.hidden = true;
         this.sourcePane.appendChild(this.collabSourceBadge);
+        this.syncSourceReadOnlyUi();
         this.cleanupFns.push(() => {
             if (this.sourcePane) {
                 this.sourcePane.classList.remove('is-collab-readonly');
@@ -381,6 +386,7 @@ class SplitEditor {
             return;
         }
         this.setCollabState(next);
+        this.updateSourceReadOnly();
     }
 
     setCollabState(next) {
@@ -446,11 +452,72 @@ class SplitEditor {
             return;
         }
         this.collabUsers = Array.isArray(users) ? users : [];
+        this.updateSourceReadOnly();
         this.renderCollabPresence();
     }
 
     getOtherCollabUsers() {
         return this.collabUsers.filter((user) => user && !user.isSelf);
+    }
+
+    getSourceEditabilityExtensions(readOnly) {
+        return [
+            EditorState.readOnly.of(!!readOnly),
+            EditorView.editable.of(!readOnly),
+        ];
+    }
+
+    computeSourceReadOnly() {
+        return !!(this.collabActive && !this.isLastCollabClient());
+    }
+
+    isSourceReadOnly() {
+        return !!this.sourceReadOnly;
+    }
+
+    updateSourceReadOnly() {
+        const nextReadOnly = this.computeSourceReadOnly();
+        if (nextReadOnly === this.sourceReadOnly) {
+            this.syncSourceReadOnlyUi();
+            return;
+        }
+
+        this.sourceReadOnly = nextReadOnly;
+        if (this.sourceView) {
+            this.sourceView.dispatch({
+                effects: this.sourceEditabilityCompartment.reconfigure(
+                    this.getSourceEditabilityExtensions(this.sourceReadOnly)
+                ),
+            });
+        }
+
+        if (this.sourceReadOnly) {
+            if (this.sourceTimer) {
+                clearTimeout(this.sourceTimer);
+                this.sourceTimer = null;
+            }
+            this.pendingSourceMd = null;
+            if (window.IrisMilkdown && typeof window.IrisMilkdown.getMarkdown === 'function') {
+                const markdown = window.IrisMilkdown.getMarkdown() || '';
+                if (this.sourceView && this.sourceView.state.doc.toString() !== markdown) {
+                    this.origin = 'milkdown';
+                    this.replaceSourceDoc(markdown);
+                    this.origin = null;
+                }
+            }
+        }
+
+        this.syncSourceReadOnlyUi();
+    }
+
+    syncSourceReadOnlyUi() {
+        const readOnly = this.isSourceReadOnly();
+        if (this.sourcePane) {
+            this.sourcePane.classList.toggle('is-collab-readonly', readOnly);
+        }
+        if (this.collabSourceBadge) {
+            this.collabSourceBadge.hidden = !readOnly;
+        }
     }
 
     renderCollabPresence() {

@@ -39,11 +39,23 @@
     flex-direction: column;
 }
 
+/* Notes full-page: let the shell fill the viewport via flex */
+.note-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
 .iris-split-shell {
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
+}
+
+/* Summary card shell: stay bounded so it doesn't blow out the card */
+#summary_split_shell {
     max-height: 600px;
 }
 

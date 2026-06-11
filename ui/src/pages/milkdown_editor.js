@@ -459,6 +459,9 @@ function getCollabAwarenessUsers() {
     const localClientID = _collabState.ydoc ? _collabState.ydoc.clientID : null;
     try {
         _collabState.provider.awareness.getStates().forEach((state, clientID) => {
+            if (!state || !state.user) {
+                return;
+            }
             const user = normalizeCollabUser(state && state.user);
             users.push({
                 clientID,
@@ -493,6 +496,7 @@ function destroyCollabState() {
             try { fn(); } catch (e) { /* noop */ }
         });
     }
+    try { if (provider && provider.awareness) provider.awareness.setLocalState(null); } catch (e) { /* noop */ }
     try { if (service) service.disconnect(); } catch (e) { /* noop */ }
     try { if (provider) provider.destroy(); } catch (e) { /* noop */ }
     try { if (ydoc) ydoc.destroy(); } catch (e) { /* noop */ }
@@ -794,7 +798,13 @@ window.IrisMilkdown = {
             return 0;
         }
         try {
-            return _collabState.provider.awareness.getStates().size;
+            let count = 0;
+            _collabState.provider.awareness.getStates().forEach((state) => {
+                if (state && state.user) {
+                    count += 1;
+                }
+            });
+            return count;
         } catch (e) {
             return 0;
         }

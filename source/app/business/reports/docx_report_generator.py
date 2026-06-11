@@ -57,6 +57,37 @@ _COLOR_POS = _RPR_ORDER.index('color')
 # Above this size, skip syntax highlighting (run explosion / perf) and render plain.
 _MAX_CODE_HIGHLIGHT_CHARS = 50000
 
+_CODE_BLOCK_FILL = 'F6F8FA'
+_CODE_BLOCK_BORDER_COLOR = 'D0D7DE'
+_CODE_BLOCK_PBDR_XML = (
+    '<w:pBdr>'
+    '<w:top w:val="single" w:sz="4" w:space="4" w:color="{}"/>'
+    '<w:left w:val="single" w:sz="4" w:space="4" w:color="{}"/>'
+    '<w:bottom w:val="single" w:sz="4" w:space="4" w:color="{}"/>'
+    '<w:right w:val="single" w:sz="4" w:space="4" w:color="{}"/>'
+    '</w:pBdr>'
+).format(
+    _CODE_BLOCK_BORDER_COLOR,
+    _CODE_BLOCK_BORDER_COLOR,
+    _CODE_BLOCK_BORDER_COLOR,
+    _CODE_BLOCK_BORDER_COLOR,
+)
+_CODE_BLOCK_SHD_XML = '<w:shd w:val="clear" w:color="auto" w:fill="{}"/>'.format(_CODE_BLOCK_FILL)
+
+# Schema order of children inside <w:pPr> (CT_PPr). The code-block override inserts pBdr
+# and shd in this order so the emitted paragraph properties remain validator-friendly.
+_PPR_ORDER = [
+    'pStyle', 'keepNext', 'keepLines', 'pageBreakBefore', 'framePr', 'widowControl',
+    'numPr', 'suppressLineNumbers', 'pBdr', 'shd', 'tabs', 'suppressAutoHyphens',
+    'kinsoku', 'wordWrap', 'overflowPunct', 'topLinePunct', 'autoSpaceDE',
+    'autoSpaceDN', 'bidi', 'adjustRightInd', 'snapToGrid', 'spacing', 'ind',
+    'contextualSpacing', 'mirrorIndents', 'suppressOverlap', 'jc', 'textDirection',
+    'textAlignment', 'textboxTightWrap', 'outlineLvl', 'divId', 'cnfStyle', 'rPr',
+    'sectPr', 'pPrChange',
+]
+_PBDR_POS = _PPR_ORDER.index('pBdr')
+_SHD_POS = _PPR_ORDER.index('shd')
+
 # Markdown tables: the base renderer emits tblW=auto + a single grid column, so Word shrinks
 # the table to its content (compressed). We render them 100% wide with a fixed layout and one
 # equal grid column per markdown column. Explicit borders (matching the ReportMain look) ensure
@@ -128,6 +159,50 @@ def _rpr_with_color(base_rpr, color):
     return etree.tostring(rpr, encoding='unicode', with_tail=False)
 
 
+def _ppr_sort_index(element):
+    try:
+        return _PPR_ORDER.index(etree.QName(element).localname)
+    except ValueError:
+        return len(_PPR_ORDER)
+
+
+def _parse_ppr_child(xml):
+    return etree.fromstring('<root xmlns:w="{}">{}</root>'.format(_W_NS, xml).encode('utf-8'))[0]
+
+
+def _insert_ppr_child(ppr, child, order_pos):
+    insert_at = len(ppr)
+    for idx, existing in enumerate(ppr):
+        if _ppr_sort_index(existing) > order_pos:
+            insert_at = idx
+            break
+    ppr.insert(insert_at, child)
+
+
+def _code_block_ppr(base_ppr):
+    """Return a <w:pPr> string based on base_ppr with direct GitHub-light code-block
+    border and shading inserted in CT_PPr order."""
+    xml = (base_ppr or '').strip()
+    if not xml:
+        xml = '<w:pPr/>'
+    elif '<w:pPr' not in xml:
+        xml = '<w:pPr>{}</w:pPr>'.format(xml)
+
+    wrapper = etree.fromstring('<root xmlns:w="{}">{}</root>'.format(_W_NS, xml).encode('utf-8'))
+    ppr = wrapper.find(_W + 'pPr')
+    if ppr is None:
+        ppr = etree.SubElement(wrapper, _W + 'pPr')
+
+    for child in list(ppr):
+        if etree.QName(child).localname in ('pBdr', 'shd'):
+            ppr.remove(child)
+
+    _insert_ppr_child(ppr, _parse_ppr_child(_CODE_BLOCK_PBDR_XML), _PBDR_POS)
+    _insert_ppr_child(ppr, _parse_ppr_child(_CODE_BLOCK_SHD_XML), _SHD_POS)
+
+    return etree.tostring(ppr, encoding='unicode', with_tail=False)
+
+
 def _code_text(token):
     if getattr(token, 'children', None):
         return token.children[0].content
@@ -179,13 +254,14 @@ class MarkdownImageDocxRenderer(DocxRenderer):
         if code.endswith('\n'):
             code = code[:-1]   # drop the fence's trailing newline -> no spurious blank line
         code = code.expandtabs(4)   # make_run has no <w:tab/>; spaces keep indentation
+        code_ppr = _code_block_ppr(self.style.code)
 
         if len(code) > _MAX_CODE_HIGHLIGHT_CHARS:
-            return super().render_block_code(token)
+            return make_paragraph(code_ppr, make_run(self.style.inline_code, code))
 
         lexer = _lexer_for_code(getattr(token, 'language', None), code)
         if lexer is None:
-            return super().render_block_code(token)
+            return make_paragraph(code_ppr, make_run(self.style.inline_code, code))
 
         runs = []
         rpr_by_color = {}
@@ -215,9 +291,9 @@ class MarkdownImageDocxRenderer(DocxRenderer):
         flush()
 
         if not runs or not has_explicit_color:
-            return super().render_block_code(token)
+            return make_paragraph(code_ppr, make_run(self.style.inline_code, code))
 
-        return make_paragraph(self.style.code, ''.join(runs))
+        return make_paragraph(code_ppr, ''.join(runs))
 
     def render_table(self, token):
         """Render a markdown table spanning the full page width with equal columns.

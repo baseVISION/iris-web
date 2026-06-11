@@ -409,6 +409,7 @@ const COLLAB_TEMPLATE_STALE_CLAIM_MS = 5000;
 const COLLAB_TEMPLATE_META_MAP = 'irisTemplateSeed';
 const COLLAB_TEMPLATE_CLAIM_KEY = 'prosemirrorTemplateClaim';
 const COLLAB_TEMPLATE_SEEDED_KEY = 'prosemirrorTemplateSeeded';
+const COLLAB_AWARENESS_BOOTSTRAP_RECHECK_MS = [250, 1000, 2000, 3500];
 
 function updateCollabStatus(status) {
     _collabStatus = status || null;
@@ -456,7 +457,7 @@ function getCollabAwarenessUsers() {
     }
 
     const users = [];
-    const localClientID = _collabState.ydoc ? _collabState.ydoc.clientID : null;
+    const localClientID = getCollabLocalClientID(_collabState);
     try {
         _collabState.provider.awareness.getStates().forEach((state, clientID) => {
             if (!state || !state.user) {
@@ -476,10 +477,111 @@ function getCollabAwarenessUsers() {
     return users;
 }
 
+function getCollabLocalClientID(state) {
+    if (!state) {
+        return null;
+    }
+    if (state.provider && state.provider.awareness && state.provider.awareness.clientID !== undefined) {
+        return state.provider.awareness.clientID;
+    }
+    return state.ydoc ? state.ydoc.clientID : null;
+}
+
 function updateCollabAwareness() {
     if (_collabState && typeof _collabState.onAwareness === 'function') {
         try { _collabState.onAwareness(getCollabAwarenessUsers()); } catch (e) { /* noop */ }
     }
+}
+
+function setLocalCollabAwarenessUser(state) {
+    if (!state || !state.provider || !state.provider.awareness || !state.user) {
+        return;
+    }
+
+    try {
+        const awareness = state.provider.awareness;
+        const localState = awareness.getLocalState ? awareness.getLocalState() : null;
+        awareness.setLocalState({
+            ...(localState || {}),
+            user: state.user,
+        });
+    } catch (e) {
+        /* noop */
+    }
+}
+
+function scheduleCollabAwarenessRefresh(state, delay = 0) {
+    if (!state || !Array.isArray(state.awarenessTimers)) {
+        return;
+    }
+
+    const timer = setTimeout(() => {
+        state.awarenessTimers = state.awarenessTimers.filter((item) => item !== timer);
+        if (_collabState !== state || state.offline) {
+            return;
+        }
+        setLocalCollabAwarenessUser(state);
+        updateCollabAwareness();
+    }, delay);
+    state.awarenessTimers.push(timer);
+}
+
+function installCollabAwarenessBootstrap(state) {
+    if (!state) {
+        return () => {};
+    }
+
+    scheduleCollabAwarenessRefresh(state, 0);
+    COLLAB_AWARENESS_BOOTSTRAP_RECHECK_MS.forEach((delay) => {
+        scheduleCollabAwarenessRefresh(state, delay);
+    });
+
+    return () => {
+        if (!Array.isArray(state.awarenessTimers)) {
+            return;
+        }
+        state.awarenessTimers.forEach((timer) => clearTimeout(timer));
+        state.awarenessTimers = [];
+    };
+}
+
+function installCollabUnloadAwarenessCleanup(state) {
+    if (!state || typeof window === 'undefined') {
+        return () => {};
+    }
+
+    const clearLocalAwareness = () => {
+        if (_collabState !== state || !state.provider || !state.provider.awareness) {
+            return;
+        }
+        try { state.provider.awareness.setLocalState(null); } catch (e) { /* noop */ }
+    };
+
+    window.addEventListener('pagehide', clearLocalAwareness);
+    window.addEventListener('beforeunload', clearLocalAwareness);
+    return () => {
+        window.removeEventListener('pagehide', clearLocalAwareness);
+        window.removeEventListener('beforeunload', clearLocalAwareness);
+    };
+}
+
+function getCollabOtherAwarenessUserCount() {
+    if (!_collabState || !_collabState.provider || !_collabState.provider.awareness) {
+        return 0;
+    }
+
+    const localClientID = getCollabLocalClientID(_collabState);
+    let count = 0;
+    try {
+        _collabState.provider.awareness.getStates().forEach((state, clientID) => {
+            if (clientID !== localClientID && state && state.user) {
+                count += 1;
+            }
+        });
+    } catch (e) {
+        return 0;
+    }
+    return count;
 }
 
 function destroyCollabState() {
@@ -698,7 +800,9 @@ window.IrisMilkdown = {
                 ydoc,
                 provider,
                 service,
+                user,
                 cleanupFns: [],
+                awarenessTimers: [],
                 rawStatus: provider.wsconnected ? 'connected' : 'connecting',
                 hasConnected: provider.wsconnected === true,
                 offline: false,
@@ -714,25 +818,47 @@ window.IrisMilkdown = {
                 _collabState.rawStatus = status;
                 if (status === 'connected') {
                     _collabState.hasConnected = true;
+                    setLocalCollabAwarenessUser(_collabState);
+                    updateCollabAwareness();
                 }
                 updateCollabConnectionStatus(_collabState);
             };
-            const handleSync = () => {
+            const handleSync = (synced) => {
                 if (!_collabState || _collabState.provider !== provider) {
                     return;
                 }
+                if (synced === true) {
+                    setLocalCollabAwarenessUser(_collabState);
+                }
                 updateCollabConnectionStatus(_collabState);
+                updateCollabAwareness();
             };
-            const handleAwareness = () => updateCollabAwareness();
+            const handleAwarenessChange = () => updateCollabAwareness();
+            const handleAwarenessUpdate = (changes) => {
+                if (!_collabState || _collabState.provider !== provider) {
+                    return;
+                }
+                updateCollabAwareness();
+
+                const localClientID = getCollabLocalClientID(_collabState);
+                const added = changes && Array.isArray(changes.added) ? changes.added : [];
+                if (added.some((clientID) => clientID !== localClientID)) {
+                    scheduleCollabAwarenessRefresh(_collabState, 0);
+                }
+            };
 
             provider.on('status', handleStatus);
             provider.on('sync', handleSync);
-            provider.awareness.on('change', handleAwareness);
+            provider.awareness.on('change', handleAwarenessChange);
+            provider.awareness.on('update', handleAwarenessUpdate);
             _collabState.cleanupFns.push(() => {
                 try { provider.off('status', handleStatus); } catch (e) { /* noop */ }
                 try { provider.off('sync', handleSync); } catch (e) { /* noop */ }
-                try { provider.awareness.off('change', handleAwareness); } catch (e) { /* noop */ }
+                try { provider.awareness.off('change', handleAwarenessChange); } catch (e) { /* noop */ }
+                try { provider.awareness.off('update', handleAwarenessUpdate); } catch (e) { /* noop */ }
             });
+            _collabState.cleanupFns.push(installCollabAwarenessBootstrap(_collabState));
+            _collabState.cleanupFns.push(installCollabUnloadAwarenessCleanup(_collabState));
             updateCollabConnectionStatus(_collabState);
             updateCollabAwareness();
         }
@@ -811,8 +937,7 @@ window.IrisMilkdown = {
     },
 
     isLastCollabClient() {
-        const count = this.getCollabAwarenessStateCount();
-        return count <= 1;
+        return getCollabOtherAwarenessUserCount() <= 0;
     },
 
     async destroy() {

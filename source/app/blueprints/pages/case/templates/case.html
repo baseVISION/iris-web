@@ -4,6 +4,7 @@
 <link rel="stylesheet" href="/static/assets/css/select2.css">
 <link rel="stylesheet" href="/static/assets/css/bootstrap-multiselect.min.css">
 <link rel="stylesheet" href="/static/assets/css/bootstrap-select.min.css">
+<link rel="stylesheet" href="/static/assets/css/milkdown_editor.css">
 {% endblock stylesheets %}
 {% block content %}
 {% if current_user.is_authenticated %}
@@ -126,6 +127,7 @@
                                         <span id="last_saved" class="badge mr-3 ml-2"></span>
                                         <small id="content_last_sync"></small>
                                         <button class="btn btn-sm mr-2 ml-3" onclick="edit_case_summary();" id="sum_edit_btn" >Edit</button>
+                                        <button class="btn btn-sm btn-light mr-2" style="display:none;" onclick="toggle_summary_editor_mode();return false;" id="sum_toggle_gui" title="Switch to GUI (WYSIWYG) editor"><i class="fa-solid fa-pen-fancy"></i> GUI</button>
                                         <button type="button" id="sum_refresh_btn" class="btn btn-sm btn-outline-default mr-3" onclick="sync_editor();">
                                             Refresh
                                         </button>
@@ -154,6 +156,9 @@
                                             <div style="display: none" id="fetched_crc"></div>
                                             <div id="editor_summary" contenteditable="true" spellcheck="true" data-theme="{% if current_user.in_dark_mode %}dark{% else %}light{% endif %}"></div>
                                             <textarea id="case_summary" rows="10" cols="82" style="display: none"></textarea>
+                                            <div id="milkdown_container_summary" style="display: none;">
+                                                <div id="milkdown_root_summary"></div>
+                                            </div>
                                         </div>
                                         <div class="col-md-6" id="ctrd_casesum">
                                             <div id="targetDiv"></div>
@@ -334,6 +339,7 @@
 <script src="/static/assets/js/iris/case.summary.js"></script>
 <script src="/static/assets/js/plugin/select/bootstrap-select.min.js"></script>
 <script src="/static/assets/js/plugin/select/bootstrap-multiselect.min.js"></script>
+<script type="module" src="/static/assets/js/iris/milkdown_editor.js"></script>
 
 <script>
     $('#modal_select_report').selectpicker();

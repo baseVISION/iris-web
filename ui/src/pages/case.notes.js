@@ -1,10 +1,8 @@
 /* Defines the kanban board */
-let note_editor;
+let note_split;
 let session_id = null ;
 let collaborator = null ;
 let collaborator_socket = null ;
-let last_applied_change = null ;
-let just_cleared_buffer = null ;
 let is_typing = "";
 let ppl_viewing = new Map();
 let timer_socket = 0;
@@ -14,9 +12,7 @@ let cid = null;
 let previousNoteTitle = null;
 let timer = null;
 let timeout = 5000;
-let gui_mode = false;   // true when the Milkdown (WYSIWYG) editor is active instead of ACE
-let editor_switching = false;   // guards against concurrent GUI/ACE toggles
-let gui_save_timer = null;   // dedicated autosave timer for GUI mode (note_detail shadows `timer`)
+let note_dirty = false;
 
 
 const preventFormDefaultBehaviourOnSubmit = (event) => {
@@ -30,32 +26,11 @@ function Collaborator( session_id, n_id ) {
 
     this.channel = "case-" + session_id + "-notes";
 
-    this.collaboration_socket.off("change-note");
-    this.collaboration_socket.off("clear_buffer-note");
     this.collaboration_socket.off("save-note");
     this.collaboration_socket.off("leave-note");
-    this.collaboration_socket.off("join-note");
+    this.collaboration_socket.off("join-notes");
     this.collaboration_socket.off("pong-note");
     this.collaboration_socket.off("disconnect");
-
-
-    this.collaboration_socket.on("change-note", function (data) {
-        // Set as int to avoid type mismatch
-        if (parseInt(data.note_id) !== parseInt(note_id)) return;
-
-        let delta = JSON.parse(data.delta);
-        last_applied_change = delta;
-        $("#content_typing").text(data.last_change + " is typing..");
-        if (delta !== null && delta !== undefined) {
-            note_editor.session.getDocument().applyDeltas([delta]);
-        }
-    }.bind());
-
-    this.collaboration_socket.on("clear_buffer-note", function () {
-        if (parseInt(data.note_id) !== parseInt(note_id)) return;
-        just_cleared_buffer = true;
-        note_editor.setValue("");
-    }.bind());
 
     this.collaboration_socket.on("save-note", function (data) {
         if (parseInt(data.note_id) !== parseInt(note_id)) return;
@@ -70,20 +45,21 @@ function Collaborator( session_id, n_id ) {
     }.bind());
 
     this.collaboration_socket.on('leave-note', function (data) {
+        if (parseInt(data.note_id) !== parseInt(note_id)) return;
         ppl_viewing.delete(data.user);
         refresh_ppl_list(session_id, note_id);
     });
 
-    this.collaboration_socket.on('join-note', function (data) {
+    this.collaboration_socket.on('join-notes', function (data) {
         if (parseInt(data.note_id) !== parseInt(note_id)) return;
-        if ((data.user in ppl_viewing)) return;
+        if (ppl_viewing.has(data.user)) return;
         ppl_viewing.set(filterXSS(data.user), 1);
         refresh_ppl_list(session_id, note_id);
         collaborator.collaboration_socket.emit('ping-note', {'channel': collaborator.channel, 'note_id': note_id});
     });
 
     this.collaboration_socket.on('ping-note', function (data) {
-        if (data.note_id !== note_id) return;
+        if (parseInt(data.note_id) !== parseInt(note_id)) return;
         collaborator.collaboration_socket.emit('pong-note', {'channel': collaborator.channel, 'note_id': note_id});
     });
 
@@ -92,14 +68,8 @@ function Collaborator( session_id, n_id ) {
         refresh_ppl_list(session_id, note_id);
     });
 
-}
+    this.collaboration_socket.emit('join-notes', {'channel': this.channel, 'note_id': n_id});
 
-Collaborator.prototype.change = function( delta, note_id ) {
-    this.collaboration_socket.emit( "change-note", { 'delta': delta, 'channel': this.channel, 'note_id': note_id } ) ;
-}
-
-Collaborator.prototype.clear_buffer = function( note_id ) {
-    this.collaboration_socket.emit( "clear_buffer-note", { 'channel': this.channel, 'note_id': note_id } ) ;
 }
 
 Collaborator.prototype.save = function( note_id ) {
@@ -136,11 +106,14 @@ async function sync_note(node_id) {
     }
 
     // Get the local note
-    let local_note = note_editor.getValue();
+    let local_note = get_active_note_markdown();
 
     // If the local note is empty, set it to the remote note
     if (local_note === '') {
-        note_editor.setValue(remote_note.data.note_content, -1);
+        if (note_split) {
+            note_split.setMarkdown(remote_note.data.note_content);
+            note_dirty = false;
+        }
         return;
     }
 
@@ -169,9 +142,14 @@ async function sync_note(node_id) {
             .then((overwrite) => {
                 if (overwrite) {
                     // Overwrite the local note with the remote note
-                    note_editor.setValue(remote_note.data.note_content, -1);
+                    if (note_split) {
+                        note_split.setMarkdown(remote_note.data.note_content);
+                        note_dirty = false;
+                    }
                 }
             });
+    } else {
+        note_dirty = false;
     }
 
     return;
@@ -306,9 +284,10 @@ async function load_note_revisions(_item) {
                     let revision = data.data;
                     $('#previewRevisionID').text(revision.revision_number);
                     $('#notePreviewModalTitle').text(`#${revision.revision_number} - ${revision.note_title}`);
-                    let note_prev = get_new_ace_editor('notePreviewModalContent', 'note_content', 'targetDiv');
-                    note_prev.setValue(revision.note_content, -1);
-                    note_prev.setReadOnly(true);
+                    let converter = get_showdown_convert();
+                    $('#notePreviewModalContent').html(
+                        converter.makeHtml(do_md_filter_xss(revision.note_content || ''))
+                    );
                     $('#notePreviewModal').modal('show');
                 });
             });
@@ -335,14 +314,11 @@ function note_revision_revert(_item, _rev) {
             return;
         }
         let revision = data.data;
-        // Reverting writes into the ACE editor; leave GUI mode so the reverted content is
-        // what gets shown and saved (save_note reads the active editor).
-        if (gui_mode) {
-            if (window.IrisMilkdown) { window.IrisMilkdown.destroy(); }
-            restore_ace_view();
-        }
         $('#currentNoteTitle').text(revision.note_title);
-        note_editor.setValue(revision.note_content, -1);
+        if (note_split) {
+            note_split.setMarkdown(revision.note_content);
+            mark_note_dirty();
+        }
         if (close_modal) {
             $('#notePreviewModal').modal('hide');
         }
@@ -381,76 +357,66 @@ function note_revision_delete(_item, _rev) {
 }
 
 /* Fetch the edit modal with content from server */
+function wait_for_split_editor() {
+    if (window.IrisSplitEditor) {
+        return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+        window.addEventListener('iris-split-editor-ready', resolve, { once: true });
+    });
+}
+
 async function note_detail(id) {
 
     get_request_api(`/case/notes/${id}`)
-    .done((data) => {
+    .done(async (data) => {
         if (data.status === 'success') {
-            let timer;
-            let timeout = 10000;
-            $('#form_note').keyup(function(){
-                if(timer) {
-                     clearTimeout(timer);
-                }
-                if (ppl_viewing.size <= 1) {
-                    timer = setTimeout(save_note, timeout);
-                }
-            });
-
-            note_id = id;
+            let previous_note_id = $('#currentNoteIDLabel').data('note_id');
 
             if (collaborator !== null) {
-                collaborator.close(note_id);
+                collaborator.close(previous_note_id);
             }
 
-            collaborator = new Collaborator( get_caseid() );
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
 
-            // Cancel any pending GUI autosave from the note we are leaving.
-            if (gui_save_timer) { clearTimeout(gui_save_timer); gui_save_timer = null; }
-
-            // Opening a note always starts in the ACE editor (default). Tear down any
-            // active (or in-flight) Milkdown GUI editor first, silently flushing its pending
-            // edits to the note being left (currentNoteIDLabel still holds the previous id).
-            if (gui_mode || editor_switching) {
-                if (window.IrisMilkdown && window.IrisMilkdown.isActive()) {
-                    let prev_id = $('#currentNoteIDLabel').data('note_id');
-                    silent_save_note(prev_id, window.IrisMilkdown.getMarkdown());
-                    window.IrisMilkdown.destroy();
+            if (note_split) {
+                let previous_note_markdown = previous_note_id ? note_split.getMarkdown() : null;
+                if (note_dirty && previous_note_id) {
+                    silent_save_note(previous_note_id, previous_note_markdown);
                 }
-                editor_switching = false;
-                $('#btn_toggle_gui').prop('disabled', false);
-                restore_ace_view();
+                await note_split.destroy();
+                note_split = null;
+                note_dirty = false;
             }
 
-            // Destroy the note editor if it exists
-            if (note_editor !== undefined && note_editor !== null) {
-                note_editor.destroy();
-                note_editor = null;
-            }
+            note_id = id;
+            collaborator = new Collaborator(get_caseid(), id);
 
-            note_editor = get_new_ace_editor('editor_detail', 'note_content', 'targetDiv', function () {
-                $('#last_saved').addClass('btn-danger').removeClass('btn-success');
-                $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
-                $('#btn_save_note').text("Save").removeClass('btn-success').addClass('btn-warning').removeClass('btn-danger');
-            }, save_note);
+            await wait_for_split_editor();
 
-            note_editor.focus();
-
-            note_editor.setValue(data.data.note_content, -1);
             $('#currentNoteTitle').text(data.data.note_title);
             previousNoteTitle = data.data.note_title;
             $('#currentNoteIDLabel').text(`#${data.data.note_id} - ${data.data.note_uuid}`)
                 .data('note_id', data.data.note_id);
 
-            note_editor.on( "change", function( e ) {
-                if( last_applied_change != e && note_editor.curOp && note_editor.curOp.command.name) {
-                    console.log('Change detected - signaling teammates');
-                    collaborator.change( JSON.stringify(e), note_id ) ;
-                }
-                }, false
-            );
-            last_applied_change = null ;
-            just_cleared_buffer = false ;
+            let target_note = id;
+            note_split = await window.IrisSplitEditor.create({
+                milkdownRoot: '#milkdown_root',
+                sourceRoot: '#note_source',
+                initialMarkdown: data.data.note_content,
+                onChange: mark_note_dirty,
+            });
+
+            if (note_id !== target_note) {
+                await note_split.destroy();
+                note_split = null;
+                return false;
+            }
+
+            note_split.focus();
 
             load_menu_mod_options_modal(id, 'note', $("#note_quick_actions"));
 
@@ -466,19 +432,8 @@ async function note_detail(id) {
             $('#content_typing').text('');
             $('#last_saved').removeClass('btn-danger').addClass('btn-success');
             $('#last_saved > i').attr('class', "fa-solid fa-file-circle-check");
-
-            let ed_details = $('#editor_detail');
-            ed_details.keyup(function(){
-                if(timer) {
-                     clearTimeout(timer);
-                }
-                timer = setTimeout(save_note, timeout);
-            });
-            ed_details.off('paste');
-            ed_details.on('paste', (event) => {
-                event.preventDefault();
-                handle_ed_paste(event);
-            });
+            $('#btn_save_note').text("Save note").removeClass('btn-success btn-danger btn-warning').addClass('btn-light');
+            note_dirty = false;
 
             setSharedLink(id);
 
@@ -495,23 +450,6 @@ function refresh_ppl_list() {
     $('#ppl_list_viewing').empty();
     for (let [key, value] of ppl_viewing) {
         $('#ppl_list_viewing').append(get_avatar_initials(key, false, undefined, true));
-    }
-    // GUI editor is single-user; disable the toggle (when not already in GUI) if others are viewing.
-    let multi = ppl_viewing.size > 1;
-    // If a collaborator appears while we're in GUI mode, cancel any pending autosave so it
-    // can't overwrite their edits (entry was already blocked; this covers the join-after case).
-    if (multi && gui_mode && gui_save_timer) {
-        clearTimeout(gui_save_timer);
-        gui_save_timer = null;
-    }
-    let $btn = $('#btn_toggle_gui');
-    if ($btn.length) {
-        $btn.prop('disabled', multi && !gui_mode);
-        if (multi && !gui_mode) {
-            $btn.attr('title', 'GUI editor disabled while others are viewing this note');
-        } else {
-            $btn.attr('title', gui_mode ? 'Switch to Markdown editor' : 'Switch to GUI (WYSIWYG) editor');
-        }
     }
 }
 
@@ -544,40 +482,20 @@ function search_notes() {
     })
 }
 
-function toggle_max_editor() {
-    $('#ctrd_notesum').toggle();
-    if ($('#ctrd_notesum').is(':visible')) {
-        $('#btn_max_editor').html('<i class="fa-solid fa-maximize"></i>');
-        $('#container_note_content').removeClass('col-md-12 col-lg-12').addClass('col-md-12 col-lg-6');
-    } else {
-        $('#btn_max_editor').html('<i class="fa-solid fa-minimize"></i>');
-        $('#container_note_content').removeClass('col-md-12 col-lg-6').addClass('col-md-12 col-lg-12');
-    }
-}
-
-/* Returns the current note markdown from whichever editor is active (ACE or Milkdown). */
+/* Returns the current note markdown from the split editor. */
 function get_active_note_markdown() {
-    if (gui_mode && window.IrisMilkdown && window.IrisMilkdown.isActive()) {
-        let md = window.IrisMilkdown.getMarkdown();
-        if (md !== null && md !== undefined) {
-            return md;
-        }
-    }
-    return note_editor ? note_editor.getValue() : "not found";
+    return note_split ? note_split.getMarkdown() : '';
 }
 
-/* Mark the note as having unsaved changes and schedule an autosave (used by Milkdown edits). */
+/* Mark the note as having unsaved changes and schedule an autosave. */
 function mark_note_dirty() {
-    // If another user has started viewing this note, GUI edits can't be safely merged with
-    // the ACE-based collaboration stream, so don't autosave (avoids clobbering their edits).
-    if (ppl_viewing.size > 1) {
-        return;
-    }
+    note_dirty = true;
+    $("#content_typing").text("You are typing..");
     $('#last_saved').addClass('btn-danger').removeClass('btn-success');
     $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
     $('#btn_save_note').text("Save").removeClass('btn-success').addClass('btn-warning').removeClass('btn-danger');
-    if (gui_save_timer) { clearTimeout(gui_save_timer); }
-    gui_save_timer = setTimeout(save_note, timeout);
+    if (timer) { clearTimeout(timer); }
+    timer = setTimeout(save_note, timeout);
 }
 
 /* Persist a note's markdown without mutating the current UI (used to flush GUI edits when
@@ -589,85 +507,9 @@ function silent_save_note(noteId, md) {
     let data_sent = Object();
     data_sent['note_title'] = $('#currentNoteTitle').text() ? $('#currentNoteTitle').text() : $('#currentNoteTitleInput').val();
     data_sent['csrf_token'] = $('#csrf_token').val();
-    data_sent['note_content'] = md;
+    data_sent['note_content'] = md !== undefined ? md : get_active_note_markdown();
     data_sent['custom_attributes'] = ret[1];
     post_request_api('/case/notes/update/' + noteId, JSON.stringify(data_sent), false, undefined, cid);
-}
-
-/* Restore the default ACE editor view (used when leaving GUI mode from several paths). */
-function restore_ace_view() {
-    $('#milkdown_container').hide();
-    // Reset to the default ACE split layout (in case edit_innote/toggle_max_editor changed it).
-    $('#container_note_content').show()
-        .removeClass('col-md-12 col-lg-12').addClass('col-md-12 col-lg-6');
-    $('#ctrd_notesum').show()
-        .removeClass('col-md-11 col-lg-11 ml-4 col-md-12 col-lg-12').addClass('col-md-12 col-lg-6');
-    $('.icon-note').show();
-    $('#notes_edition_btn').show();
-    gui_mode = false;
-    $('#btn_toggle_gui').removeClass('btn-primary').addClass('btn-light')
-        .attr('title', 'Switch to GUI (WYSIWYG) editor');
-}
-
-/* Toggle between the ACE markdown editor (default) and the Milkdown WYSIWYG editor. */
-async function toggle_editor_mode() {
-    if (typeof window.IrisMilkdown === 'undefined') {
-        notify_error('GUI editor is still loading, please retry in a moment.');
-        return;
-    }
-    if (editor_switching) {
-        return;
-    }
-
-    if (!gui_mode) {
-        // GUI mode uses single-editor semantics; block it during live collaboration since
-        // remote edits sync only through the ACE editor.
-        if (ppl_viewing.size > 1) {
-            notify_error('The GUI editor is disabled while others are viewing this note. Use the Markdown editor for collaborative editing.');
-            return;
-        }
-        editor_switching = true;
-        $('#btn_toggle_gui').prop('disabled', true);
-        let md = note_editor ? note_editor.getValue() : '';
-        let target_note = note_id;   // guard against the user switching notes mid-create
-        try {
-            await window.IrisMilkdown.create('#milkdown_root', md, mark_note_dirty);
-            if (note_id !== target_note) {
-                // A different note was opened while Crepe was initialising; discard this editor.
-                await window.IrisMilkdown.destroy();
-                return;
-            }
-            // Only flip the UI once Crepe is fully created.
-            $('#container_note_content').hide();
-            $('#ctrd_notesum').hide();        // Milkdown is itself the live view
-            $('#notes_edition_btn').hide();
-            $('.icon-note').hide();           // ACE-only preview/edit toggle pencil
-            $('#milkdown_container').show();
-            gui_mode = true;
-            $('#btn_toggle_gui').addClass('btn-primary').removeClass('btn-light')
-                .attr('title', 'Switch to Markdown editor');
-        } catch (e) {
-            notify_error('Failed to open the GUI editor: ' + (e && e.message ? e.message : e));
-            try { await window.IrisMilkdown.destroy(); } catch (err) { /* noop */ }
-        } finally {
-            editor_switching = false;
-            $('#btn_toggle_gui').prop('disabled', false);
-        }
-    } else {
-        editor_switching = true;
-        $('#btn_toggle_gui').prop('disabled', true);
-        try {
-            let md = window.IrisMilkdown.isActive() ? window.IrisMilkdown.getMarkdown() : null;
-            try { await window.IrisMilkdown.destroy(); } catch (e) { /* noop */ }
-            restore_ace_view();
-            if (note_editor && md !== null && md !== undefined) {
-                note_editor.setValue(md, -1);
-            }
-        } finally {
-            editor_switching = false;
-            $('#btn_toggle_gui').prop('disabled', false);
-        }
-    }
 }
 
 /* Save a note into db */
@@ -675,6 +517,7 @@ function save_note() {
     clear_api_error();
     let n_id = $('#currentNoteIDLabel').data('note_id')
 
+    if (!n_id) { return false; }
 
     let data_sent = Object();
     let currentNoteTitle = $('#currentNoteTitle').text() ? $('#currentNoteTitle').text() : $('#currentNoteTitleInput').val();
@@ -698,12 +541,19 @@ function save_note() {
         if (api_request_failed(data)) {
             return;
         }
+        if (timer) {
+            clearTimeout(timer);
+            timer = null;
+        }
+        note_dirty = false;
         $('#btn_save_note').text("Saved").addClass('btn-success').removeClass('btn-danger').removeClass('btn-warning');
         $('#last_saved').removeClass('btn-danger').addClass('btn-success');
         $("#content_last_saved_by").text('Last saved by you');
         $('#last_saved > i').attr('class', "fa-solid fa-file-circle-check");
 
-        collaborator.save(n_id);
+        if (collaborator) {
+            collaborator.save(n_id);
+        }
 
         if (previousNoteTitle !== currentNoteTitle) {
             load_directories().then(function() {
@@ -713,19 +563,6 @@ function save_note() {
             previousNoteTitle = currentNoteTitle;
         }
     });
-}
-
-/* Span for note edition */
-function edit_innote() {
-    if (gui_mode) { return; }   // the ACE preview/edit split does not apply in GUI mode
-    $('#container_note_content').toggle();
-    if ($('#container_note_content').is(':visible')) {
-        $('#notes_edition_btn').show(100);
-        $('#ctrd_notesum').removeClass('col-md-11 col-lg-11 ml-4').addClass('col-md-6 col-lg-6');
-    } else {
-        $('#notes_edition_btn').hide(100);
-        $('#ctrd_notesum').removeClass('col-md-6 col-lg-6').addClass('col-md-11 col-lg-11 ml-4');
-    }
 }
 
 async function load_directories() {
@@ -1213,47 +1050,6 @@ function createDirectoryListItem(directory, directoryMap) {
     }
 
     return listItem;
-}
-
-
-function handle_ed_paste(event) {
-    let filename = null;
-    const { items } = event.originalEvent.clipboardData;
-    for (let i = 0; i < items.length; i += 1) {
-      const item = items[i];
-
-      if (item.kind === 'string') {
-        item.getAsString(function (s){
-            filename = $.trim(s.replace(/\t|\n|\r/g, '')).substring(0, 40);
-        });
-      }
-
-      if (item.kind === 'file') {
-        const blob = item.getAsFile();
-
-        if (blob !== null) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                notify_success('The file is uploading in background. Don\'t leave the page');
-
-                if (filename === null) {
-                    let ext = get_extension_from_mime(blob.type);
-                    filename = random_filename(25) + '.' + ext;
-                }
-
-                upload_interactive_data(e.target.result, filename, function(data){
-                    url = data.data.file_url + case_param();
-                    event.preventDefault();
-                    note_editor.insertSnippet(`\n![${filename}](${url} =100%x40%)\n`);
-                });
-
-            };
-            reader.readAsDataURL(blob);
-        } else {
-            notify_error('Unsupported direct paste of this item. Use datastore to upload.');
-        }
-      }
-    }
 }
 
 

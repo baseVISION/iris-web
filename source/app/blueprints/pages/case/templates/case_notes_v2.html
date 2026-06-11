@@ -108,49 +108,31 @@
 						  	</div>
 						</div>
 					</div>
-					<div class="note-body">
-						<div class="row mb-1 mt-3 ml-2">
-							<div class="col-10" id="notes_edition_btn">
-									<div class="btn btn-sm btn-light mr-1 " title="CTRL-S" id="last_saved" onclick="save_note();"><i class="fa-solid fa-file-circle-check"></i></div>
-									<div class="btn btn-sm btn-light mr-1 " title="CTRL-B" onclick="note_editor.insertSnippet('**${1:$SELECTION}**');note_editor.focus();"><i class="fa-solid fa-bold"></i></div>
-									<div class="btn btn-sm btn-light mr-1" title="CTRL-I" onclick="note_editor.insertSnippet('*${1:$SELECTION}*');note_editor.focus();"><i class="fa-solid fa-italic"></i></div>
-									<div class="btn btn-sm btn-light mr-1" title="CTRL-SHIFT-1" onclick="note_editor.insertSnippet('# ${1:$SELECTION}');note_editor.focus();">H1</div>
-									<div class="btn btn-sm btn-light mr-1" title="CTRL-SHIFT-2" onclick="note_editor.insertSnippet('## ${1:$SELECTION}');note_editor.focus();">H2</div>
-									<div class="btn btn-sm btn-light mr-1" title="CTRL-SHIFT-3" onclick="note_editor.insertSnippet('### ${1:$SELECTION}');note_editor.focus();">H3</div>
-									<div class="btn btn-sm btn-light mr-1" title="CTRL-SHIFT-4" onclick="note_editor.insertSnippet('#### ${1:$SELECTION}');note_editor.focus();">H4</div>
-									<div class="btn btn-sm btn-light mr-1" title="CTRL+\`" onclick="note_editor.insertSnippet('```${1:$SELECTION}```');note_editor.focus();"><i class="fa-solid fa-code"></i></div>
-									<div class="btn btn-sm btn-light mr-1" title="CTRL-K" onclick="note_editor.insertSnippet('[${1:$SELECTION}](url)');note_editor.focus();"><i class="fa-solid fa-link"></i></div>
-									<div class="btn btn-sm btn-light mr-1" title="Insert table" onclick="note_editor.insertSnippet('|\t|\t|\t|\n|--|--|--|\n|\t|\t|\t|\n|\t|\t|\t|');note_editor.focus();"><i class="fa-solid fa-table"></i></div>
-									<div class="btn btn-sm btn-light mr-1" title="Insert bullet list" onclick="note_editor.insertSnippet('\n- \n- \n- ');note_editor.focus();"><i class="fa-solid fa-list"></i></div>
-									<div class="btn btn-sm btn-light mr-1" title="Insert numbered list" onclick="note_editor.insertSnippet('\n1. a  \n2. b  \n3. c  ');note_editor.focus();"><i class="fa-solid fa-list-ol"></i></div>
-									<div class="btn btn-sm btn-light mr-1" title="Toggle editor expansion" onclick="toggle_max_editor();" id="btn_max_editor"><i class="fa-solid fa-maximize"></i></div>
-									<div class="btn btn-sm btn-transparent mr-1" title="Help" onclick="get_md_helper_modal();"><i class="fa-solid fa-question-circle"></i></div>
+					<div class="note-body" data-theme="{% if current_user.in_dark_mode %}dark{% else %}light{% endif %}">
+						<div class="row mb-1 mt-3 ml-2 mr-2 align-items-center">
+							<div class="col">
+								<div class="iris-view-toggle" role="group" aria-label="Note editor view">
+									<button type="button" id="view_split" class="is-active" aria-pressed="true">Split</button>
+									<button type="button" id="view_source" aria-pressed="false">Source</button>
+									<button type="button" id="view_preview" aria-pressed="false">Preview</button>
+								</div>
 							</div>
 							<div class="col">
-								<button type="button" class="float-right icon-note btn btn-light btn-circle btn-sm mr-2" onclick="edit_innote();"></button>
-								<button type="button" class="float-right btn btn-light btn-sm mr-2" onclick="save_note();return false;" title="Save note">
+								<button type="button" class="float-right btn btn-light btn-sm mr-2" id="btn_save_note" onclick="save_note();return false;" title="Save note">
 									<span class="btn-label">
 										<i class="fa fa-save mr-2"></i>Save note
 									</span>
 								</button>
-								<button type="button" class="float-right btn btn-light btn-sm mr-2" id="btn_toggle_gui" onclick="toggle_editor_mode();return false;" title="Switch to GUI (WYSIWYG) editor">
-									<span class="btn-label">
-										<i class="fa-solid fa-wand-magic-sparkles mr-2"></i>GUI
-									</span>
-								</button>
+								<div class="btn btn-sm btn-light float-right mr-2" title="CTRL-S" id="last_saved" onclick="save_note();"><i class="fa-solid fa-file-circle-check"></i></div>
 							</div>
 						</div>
-						<div class="row" id="noteContentScroll">
-							<div class="col-md-12 col-lg-6" id="container_note_content">
-								<div style="display: none" id="fetched_crc"></div>
-								<div id="editor_detail" contenteditable="true" spellcheck="true" data-theme="{% if current_user.in_dark_mode %}dark{% else %}light{% endif %}"></div>
-								<textarea id="note_content" rows="10" cols="82" style="display: none"></textarea>
+						<div id="note_split" class="iris-split view-split">
+							<div id="note_source" class="iris-split-pane is-active">
+								<div class="iris-split-label">MARKDOWN</div>
 							</div>
-							<div class="col-md-12 col-lg-6" id="ctrd_notesum">
-								<div id="targetDiv"></div>
-							</div>
-							<div class="col-md-12 col-lg-12" id="milkdown_container" style="display: none;">
-								<div id="milkdown_root"></div>
+							<div id="note_divider" class="iris-split-divider" role="separator"></div>
+							<div id="milkdown_root" class="iris-split-pane">
+								<div class="iris-split-label">PREVIEW</div>
 							</div>
 						</div>
 					</div>
@@ -243,6 +225,7 @@
 <script src="/static/assets/js/core/socket.io.js"></script>
 <script src="/static/assets/js/iris/case.notes.js "></script>
 <script type="module" src="/static/assets/js/iris/milkdown_editor.js"></script>
+<script type="module" src="/static/assets/js/iris/milkdown_split.js"></script>
 
 
 {% endblock javascripts %}

@@ -4,6 +4,8 @@
 // URLs resolve correctly. Theme CSS is emitted to /static/assets/css/milkdown_editor.css
 // and must be linked manually in the template.
 import { Crepe } from '@milkdown/crepe';
+import { editorViewCtx, parserCtx } from '@milkdown/kit/core';
+import { Slice } from '@milkdown/kit/prose/model';
 import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/frame.css';
 import '../lib/milkdown_overrides.css';
@@ -166,6 +168,30 @@ window.IrisMilkdown = {
     // Current content as IRIS-canonical markdown (this is what save_note must persist).
     getMarkdown() {
         return _crepe ? milkdownToIris(_crepe.getMarkdown()) : null;
+    },
+
+    setMarkdown(irisMarkdown) {
+        if (!_crepe) {
+            return false;
+        }
+
+        _crepe.editor.action((ctx) => {
+            const view = ctx.get(editorViewCtx);
+            const parser = ctx.get(parserCtx);
+            const doc = parser(irisToMilkdown(irisMarkdown || ''));
+            if (!doc) {
+                return;
+            }
+
+            const tr = view.state.tr.replace(
+                0,
+                view.state.doc.content.size,
+                new Slice(doc.content, 0, 0)
+            );
+            tr.setMeta('addToHistory', false);
+            view.dispatch(tr);
+        });
+        return true;
     },
 
     isActive() {

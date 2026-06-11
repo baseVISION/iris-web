@@ -77,7 +77,7 @@ _TABLE_BORDERS = (
 @lru_cache(maxsize=1)
 def _pygments_style():
     # 'default' is always available and readable on a white Word page.
-    return get_style_by_name('default')
+    return get_style_by_name('xcode')
 
 
 @lru_cache(maxsize=512)

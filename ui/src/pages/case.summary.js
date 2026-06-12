@@ -155,6 +155,21 @@ function summary_collab_sync_post(markdown) {
     }
 }
 
+function summary_sync_post(markdown) {
+    try {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/case/summary/update' + case_param(), false);
+        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+        xhr.send(JSON.stringify({
+            case_description: markdown,
+            csrf_token: $('#csrf_token').val(),
+        }));
+        return xhr.status >= 200 && xhr.status < 300;
+    } catch (e) {
+        return false;
+    }
+}
+
 async function flush_summary_collab_before_close(markdown) {
     clear_summary_collab_timers();
     if (!is_summary_collab_active()) {
@@ -618,10 +633,13 @@ $(document).ready(function() {
     sync_editor(true).catch(function() {});
     setInterval(auto_remove_typing, 2000);
     window.addEventListener('beforeunload', function() {
-        if (!is_summary_collab_active()) {
+        if (is_summary_collab_active()) {
+            summary_collab_sync_post(get_active_summary_markdown());
             return;
         }
-        summary_collab_sync_post(get_active_summary_markdown());
+        if (summary_dirty) {
+            summary_sync_post(get_active_summary_markdown());
+        }
     });
 
     const review_state = $('#caseReviewState');

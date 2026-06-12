@@ -509,6 +509,15 @@ class SplitEditor {
             return;
         }
 
+        if (nextReadOnly) {
+            if (this.sourceTimer) {
+                clearTimeout(this.sourceTimer);
+                this.sourceTimer = null;
+            }
+            // Flush any pending source edit while still editable, before locking.
+            this.applyPendingSource();
+        }
+
         this.sourceReadOnly = nextReadOnly;
         if (this.sourceView) {
             this.sourceView.dispatch({
@@ -519,11 +528,6 @@ class SplitEditor {
         }
 
         if (this.sourceReadOnly) {
-            if (this.sourceTimer) {
-                clearTimeout(this.sourceTimer);
-                this.sourceTimer = null;
-            }
-            this.pendingSourceMd = null;
             if (window.IrisMilkdown && typeof window.IrisMilkdown.getMarkdown === 'function') {
                 const markdown = window.IrisMilkdown.getMarkdown() || '';
                 if (this.sourceView && this.sourceView.state.doc.toString() !== markdown) {

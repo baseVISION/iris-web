@@ -84,10 +84,11 @@ class ImageHandler(PictureGlobals):
 
         try:
             return super().add_picture(image_path, position)
-        except Exception as e:
-            # Never let a single bad image (missing/relative src, decode error, etc.) abort the
-            # whole report — skip it and continue, otherwise the route returns a JSON error that
-            # the browser saves as a corrupt .docx.
+        except RenderingError as e:
+            # Never let a single bad image (missing file, invalid path, decode error, etc.) abort
+            # the whole report — skip it and continue, otherwise the route returns a JSON error
+            # that the browser saves as a corrupt .docx. Other exceptions (e.g. a filesystem
+            # error creating the temp image directory) are real bugs and should surface.
             self._logger.error('Skipping image in report (%s): %s', image_path, e)
             try:
                 return self._template.new_subdoc()

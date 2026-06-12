@@ -59,6 +59,20 @@ export function syncPostJson(url, payload, caseId) {
     }
 }
 
+export async function mountMarkdownSplitEditor(prefix, initialMarkdown, { onChange, timeoutMs = 10000, onTimeout } = {}) {
+    await waitForSplitEditor({ timeoutMs, onTimeout });
+    return window.IrisSplitEditor.create({
+        container: `#${prefix}_split`,
+        sourcePane: `#${prefix}_source`,
+        wysiwygPane: `#${prefix}_preview`,
+        divider: `#${prefix}_divider`,
+        viewToggle: document.querySelector(`#${prefix}_view_toggle`),
+        initialMarkdown: initialMarkdown || '',
+        onChange,
+        collab: null,
+    });
+}
+
 export function waitForSplitEditor({ timeoutMs, onTimeout } = {}) {
     if (window.IrisSplitEditor) {
         return Promise.resolve();

@@ -63,6 +63,11 @@
     max-height: 600px;
 }
 
+/* Asset description shell: stay bounded within the add/edit asset modal */
+#asset_desc_split_shell {
+    max-height: 400px;
+}
+
 /* ---- 1. Split container & panes ------------------------------------------ */
 .iris-split {
     display: flex;

@@ -112,6 +112,11 @@ def summary_collab_persist(caseid):
         db.session.commit()
         track_activity('persisted summary collaboration', caseid)
 
+        socket_io.emit('save', {
+            'case_description': case.description,
+            'last_saved': iris_current_user.user
+        }, to=f'case-{caseid}')
+
         return response_success('ok', data={
             'persisted': True,
             'crc32': crc,

@@ -27,6 +27,7 @@ from pycrdt.websocket.yroom import YRoom
 from app import app as flask_app
 from app.business.access_controls import ac_fast_check_user_has_case_access
 from app.models.authorization import CaseAccessLevel, User
+from app.models.cases import Cases
 from app.models.models import Notes
 
 
@@ -224,6 +225,11 @@ def authorize_scope(scope: dict[str, Any]) -> AuthorizedRoom | None:
 
             case_id = int(note.note_case_id)
         elif summary_case_id is not None:
+            case = Cases.query.filter(Cases.case_id == summary_case_id).first()
+            if case is None:
+                flask_app.logger.warning("Rejected collab websocket for %s: unknown case %s", room_name, summary_case_id)
+                return None
+
             case_id = summary_case_id
         else:
             flask_app.logger.warning("Rejected collab websocket for %s: unknown room type", room_name)

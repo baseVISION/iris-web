@@ -43,7 +43,6 @@ from app.datamgmt.case.case_notes_db import delete_note_comment
 from app.datamgmt.case.case_notes_db import get_case_note_comment
 from app.datamgmt.case.case_notes_db import get_case_note_comments
 from app.datamgmt.case.case_notes_db import get_note
-from app.datamgmt.case.case_notes_db import update_note
 from app.datamgmt.case.case_notes_db import update_note_revision
 from app.datamgmt.states import get_notes_state
 from app.iris_engine.module_handler.module_handler import call_modules_hook
@@ -167,25 +166,17 @@ def case_note_collab_persist(cur_id, caseid):
         if not isinstance(request_data.get('note_content'), str):
             return response_error('Data error', data={'note_content': ['Missing note content']})
 
-        note = update_note(
-            note_content=request_data.get('note_content'),
-            note_title=note.note_title,
-            update_date=datetime.utcnow(),
-            user_id=iris_current_user.id,
-            note_id=cur_id,
-            caseid=caseid
-        )
-        if not note:
-            return response_error('Invalid note ID for this case')
+        note.note_content = request_data.get('note_content')
+        note = notes_update(iris_current_user, note)
 
         return response_success('ok', data={
             'persisted': True,
             'client_hash': request_data.get('client_hash')
         })
 
-    except Exception as e:
+    except Exception:
         app.logger.exception('Unable to persist collab note %s', cur_id)
-        return response_error('Unable to persist note', data=str(e))
+        return response_error('Unable to persist note')
 
 
 @case_notes_rest_blueprint.route('/case/notes/<int:cur_id>/collab/snapshot', methods=['POST'])
@@ -203,9 +194,9 @@ def case_note_collab_snapshot(cur_id, caseid):
             'revision_created': created
         })
 
-    except Exception as e:
+    except Exception:
         app.logger.exception('Unable to snapshot collab note %s', cur_id)
-        return response_error('Unable to snapshot note', data=str(e))
+        return response_error('Unable to snapshot note')
 
 
 @case_notes_rest_blueprint.route('/case/notes/<int:cur_id>/revisions/list', methods=['GET'])

@@ -1,4 +1,6 @@
 /* Defines the kanban board */
+import { hashContent, getCollabUser, syncPostJson, waitForSplitEditor } from '$lib/collab_editor_session';
+
 let note_split;
 let session_id = null ;
 let collaborator = null ;
@@ -21,55 +23,7 @@ let note_collab_changed_since_snapshot = false;
 
 const NOTE_COLLAB_PERSIST_DEBOUNCE_MS = 4000;
 const NOTE_COLLAB_IDLE_SNAPSHOT_MS = 60000;
-
-const NOTE_COLLAB_COLORS = [
-    '#0f766e',
-    '#2563eb',
-    '#7c3aed',
-    '#c2410c',
-    '#be123c',
-    '#047857',
-    '#4338ca',
-    '#b45309',
-    '#0369a1',
-    '#a21caf',
-];
-
-function hash_note_collab_string(value) {
-    let hash = 0;
-    const str = value || 'IRIS';
-    for (let i = 0; i < str.length; i += 1) {
-        hash = ((hash << 5) - hash) + str.charCodeAt(i);
-        hash |= 0;
-    }
-    return Math.abs(hash);
-}
-
-function hash_note_content(value) {
-    const text = value || '';
-    return `${text.length}:${hash_note_collab_string(text)}`;
-}
-
-function get_note_collab_user() {
-    let whoami = null;
-    if (typeof userWhoami !== 'undefined' && userWhoami) {
-        whoami = userWhoami;
-    } else {
-        try {
-            whoami = JSON.parse(sessionStorage.getItem('userWhoami'));
-        } catch (e) {
-            whoami = null;
-        }
-    }
-
-    const name = (whoami && (whoami.user_name || whoami.user_login))
-        || $('#current_username').text()
-        || 'IRIS user';
-    return {
-        name,
-        color: NOTE_COLLAB_COLORS[hash_note_collab_string(name) % NOTE_COLLAB_COLORS.length],
-    };
-}
+const NOTE_SPLIT_EDITOR_LOAD_TIMEOUT_MS = 10000;
 
 function is_note_collab_active() {
     return !!(note_split && typeof note_split.isCollabActive === 'function' && note_split.isCollabActive());
@@ -94,7 +48,7 @@ function clear_note_collab_timers() {
 
 function reset_note_collab_state(markdown) {
     clear_note_collab_timers();
-    const hash = hash_note_content(markdown || '');
+    const hash = hashContent(markdown || '');
     note_collab_last_persist_hash = hash;
     note_collab_last_snapshot_hash = hash;
     note_collab_changed_since_snapshot = false;
@@ -104,7 +58,7 @@ function note_collab_payload(markdown) {
     return {
         csrf_token: $('#csrf_token').val(),
         note_content: markdown || '',
-        client_hash: hash_note_content(markdown || ''),
+        client_hash: hashContent(markdown || ''),
     };
 }
 
@@ -121,7 +75,7 @@ function note_collab_persist(noteId, markdown, options = {}) {
     }
 
     const md = markdown !== undefined ? markdown : get_active_note_markdown();
-    const hash = hash_note_content(md);
+    const hash = hashContent(md);
     if (!options.force && hash === note_collab_last_persist_hash) {
         return Promise.resolve({ skipped: true, hash });
     }
@@ -152,7 +106,7 @@ function note_collab_snapshot(noteId, markdown, options = {}) {
     }
 
     const md = markdown !== undefined ? markdown : get_active_note_markdown();
-    const hash = hash_note_content(md);
+    const hash = hashContent(md);
     if (!options.force && !note_collab_changed_since_snapshot && hash === note_collab_last_snapshot_hash) {
         return Promise.resolve({ skipped: true, hash });
     }
@@ -228,7 +182,7 @@ function schedule_note_collab_idle_snapshot() {
 
 function mark_note_collab_dirty() {
     const md = get_active_note_markdown();
-    const hash = hash_note_content(md);
+    const hash = hashContent(md);
     note_dirty = true;
     note_collab_changed_since_snapshot = true;
     $('#btn_save_note').text(hash === note_collab_last_snapshot_hash ? "Snapshot" : "Snapshot")
@@ -239,27 +193,11 @@ function mark_note_collab_dirty() {
 }
 
 function note_collab_sync_post(uri, payload) {
-    try {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${uri}?cid=${encodeURIComponent(get_caseid())}`, false);
-        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
-        xhr.send(JSON.stringify(payload));
-        return xhr.status >= 200 && xhr.status < 300;
-    } catch (e) {
-        return false;
-    }
+    return syncPostJson(uri, payload, get_caseid());
 }
 
 function note_sync_post(noteId, payload) {
-    try {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `/case/notes/update/${noteId}?cid=${encodeURIComponent(get_caseid())}`, false);
-        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
-        xhr.send(JSON.stringify(payload));
-        return xhr.status >= 200 && xhr.status < 300;
-    } catch (e) {
-        return false;
-    }
+    return syncPostJson(`/case/notes/update/${noteId}`, payload, get_caseid());
 }
 
 function flush_note_collab_leave_sync(noteId) {
@@ -268,7 +206,7 @@ function flush_note_collab_leave_sync(noteId) {
     }
 
     const md = get_active_note_markdown();
-    const hash = hash_note_content(md);
+    const hash = hashContent(md);
     const csrf = $('#csrf_token').val();
     note_collab_sync_post(`/case/notes/${noteId}/collab/persist`, {
         csrf_token: csrf,
@@ -291,7 +229,7 @@ async function flush_note_collab_before_leave(noteId) {
     clear_note_collab_timers();
     await note_collab_persist_and_snapshot(noteId, md, {
         forcePersist: true,
-        forceSnapshot: note_collab_changed_since_snapshot || hash_note_content(md) !== note_collab_last_snapshot_hash,
+        forceSnapshot: note_collab_changed_since_snapshot || hashContent(md) !== note_collab_last_snapshot_hash,
     }).catch(() => {});
 }
 
@@ -667,11 +605,9 @@ function note_revision_delete(_item, _rev) {
 
 /* Fetch the edit modal with content from server */
 function wait_for_split_editor() {
-    if (window.IrisSplitEditor) {
-        return Promise.resolve();
-    }
-    return new Promise((resolve) => {
-        window.addEventListener('iris-split-editor-ready', resolve, { once: true });
+    return waitForSplitEditor({
+        timeoutMs: NOTE_SPLIT_EDITOR_LOAD_TIMEOUT_MS,
+        onTimeout: () => notify_error('GUI editor failed to load'),
     });
 }
 
@@ -725,7 +661,7 @@ async function note_detail(id) {
                 onChange: mark_note_dirty,
                 collab: {
                     room: 'note-' + data.data.note_id,
-                    user: get_note_collab_user(),
+                    user: getCollabUser(),
                     presenceTarget: '#ppl_list_viewing',
                     onStatus: function(status) {
                         $('#note_split').attr('data-collab-status', status || '');

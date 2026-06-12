@@ -1,4 +1,5 @@
 import crc32 from '$lib/utils/crc32';
+import { hashContent, getCollabUser, syncPostJson, waitForSplitEditor } from '$lib/collab_editor_session';
 
 let collaborator = null;
 let summary_split = null;
@@ -16,54 +17,6 @@ const SUMMARY_AUTOSAVE_MS = 2000;
 const SUMMARY_COLLAB_PERSIST_DEBOUNCE_MS = 4000;
 const SUMMARY_COLLAB_WINDOW_MS = 15000;
 const SUMMARY_SPLIT_EDITOR_LOAD_TIMEOUT_MS = 10000;
-const SUMMARY_COLLAB_COLORS = [
-    '#0f766e',
-    '#2563eb',
-    '#7c3aed',
-    '#c2410c',
-    '#be123c',
-    '#047857',
-    '#4338ca',
-    '#b45309',
-    '#0369a1',
-    '#a21caf',
-];
-
-function hash_summary_collab_string(value) {
-    let hash = 0;
-    const str = value || 'IRIS';
-    for (let i = 0; i < str.length; i += 1) {
-        hash = ((hash << 5) - hash) + str.charCodeAt(i);
-        hash |= 0;
-    }
-    return Math.abs(hash);
-}
-
-function hash_summary_content(value) {
-    const text = value || '';
-    return `${text.length}:${hash_summary_collab_string(text)}`;
-}
-
-function get_summary_collab_user() {
-    let whoami = null;
-    if (typeof userWhoami !== 'undefined' && userWhoami) {
-        whoami = userWhoami;
-    } else {
-        try {
-            whoami = JSON.parse(sessionStorage.getItem('userWhoami'));
-        } catch (e) {
-            whoami = null;
-        }
-    }
-
-    const name = (whoami && (whoami.user_name || whoami.user_login))
-        || $('#current_username').text()
-        || 'IRIS user';
-    return {
-        name,
-        color: SUMMARY_COLLAB_COLORS[hash_summary_collab_string(name) % SUMMARY_COLLAB_COLORS.length],
-    };
-}
 
 function is_summary_collab_active() {
     return !!(summary_split
@@ -80,14 +33,14 @@ function clear_summary_collab_timers() {
 
 function reset_summary_collab_state(markdown) {
     clear_summary_collab_timers();
-    summary_collab_last_persist_hash = hash_summary_content(markdown || '');
+    summary_collab_last_persist_hash = hashContent(markdown || '');
 }
 
 function summary_collab_payload(markdown) {
     return {
         csrf_token: $('#csrf_token').val(),
         case_description: markdown || '',
-        client_hash: hash_summary_content(markdown || ''),
+        client_hash: hashContent(markdown || ''),
     };
 }
 
@@ -104,7 +57,7 @@ function mark_summary_collab_persisted(hash, data) {
 
 function summary_collab_persist(markdown, options = {}) {
     const md = markdown !== undefined ? markdown : get_active_summary_markdown();
-    const hash = hash_summary_content(md);
+    const hash = hashContent(md);
     if (!options.force && hash === summary_collab_last_persist_hash) {
         return Promise.resolve({ skipped: true, hash });
     }
@@ -144,30 +97,14 @@ function schedule_summary_collab_persist() {
 }
 
 function summary_collab_sync_post(markdown) {
-    try {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `/case/summary/collab/persist?cid=${encodeURIComponent(get_caseid())}`, false);
-        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
-        xhr.send(JSON.stringify(summary_collab_payload(markdown)));
-        return xhr.status >= 200 && xhr.status < 300;
-    } catch (e) {
-        return false;
-    }
+    return syncPostJson('/case/summary/collab/persist', summary_collab_payload(markdown), get_caseid());
 }
 
 function summary_sync_post(markdown) {
-    try {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/case/summary/update' + case_param(), false);
-        xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
-        xhr.send(JSON.stringify({
-            case_description: markdown,
-            csrf_token: $('#csrf_token').val(),
-        }));
-        return xhr.status >= 200 && xhr.status < 300;
-    } catch (e) {
-        return false;
-    }
+    return syncPostJson('/case/summary/update', {
+        case_description: markdown,
+        csrf_token: $('#csrf_token').val(),
+    }, get_caseid());
 }
 
 async function flush_summary_collab_before_close(markdown) {
@@ -179,21 +116,9 @@ async function flush_summary_collab_before_close(markdown) {
 }
 
 function wait_for_split_editor() {
-    if (window.IrisSplitEditor) {
-        return Promise.resolve();
-    }
-    return new Promise((resolve, reject) => {
-        const on_ready = function() {
-            clearTimeout(timeout);
-            resolve();
-        };
-        const timeout = window.setTimeout(function() {
-            window.removeEventListener('iris-split-editor-ready', on_ready);
-            notify_error('GUI editor failed to load');
-            reject(new Error('GUI editor failed to load'));
-        }, SUMMARY_SPLIT_EDITOR_LOAD_TIMEOUT_MS);
-
-        window.addEventListener('iris-split-editor-ready', on_ready, { once: true });
+    return waitForSplitEditor({
+        timeoutMs: SUMMARY_SPLIT_EDITOR_LOAD_TIMEOUT_MS,
+        onTimeout: () => notify_error('GUI editor failed to load'),
     });
 }
 
@@ -376,7 +301,7 @@ async function open_summary_split() {
             onChange: on_summary_split_change,
             collab: {
                 room: 'summary-' + get_caseid(),
-                user: get_summary_collab_user(),
+                user: getCollabUser(),
                 presenceTarget: '#content_typing',
                 onStatus: function(status) {
                     $('#summary_split').attr('data-collab-status', status || '');

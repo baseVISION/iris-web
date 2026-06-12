@@ -85,7 +85,7 @@ class SplitEditor {
     constructor() {
         this.container = null;
         this.sourcePane = null;
-        this.previewPane = null;
+        this.wysiwygPane = null;
         this.divider = null;
         this.viewToggle = null;
         this.sourceView = null;
@@ -114,24 +114,34 @@ class SplitEditor {
         this.sourceScrollFrame = null;
     }
 
-    async create({ container, sourcePane, previewPane, divider, viewToggle, initialMarkdown = '', onChange, collab = null }) {
+    withOrigin(origin, fn) {
+        const previous = this.origin;
+        this.origin = origin;
+        try {
+            return fn();
+        } finally {
+            this.origin = previous;
+        }
+    }
+
+    async create({ container, sourcePane, wysiwygPane, divider, viewToggle, initialMarkdown = '', onChange, collab = null }) {
         this.container = resolveRef(container);
         this.sourcePane = resolveRef(sourcePane);
-        this.previewPane = resolveRef(previewPane);
+        this.wysiwygPane = resolveRef(wysiwygPane);
         this.divider = resolveRef(divider);
         this.viewToggle = resolveRef(viewToggle);
         this.onChange = typeof onChange === 'function' ? onChange : null;
         this.collabActive = !!collab;
 
-        if (!this.container || !this.sourcePane || !this.previewPane) {
+        if (!this.container || !this.sourcePane || !this.wysiwygPane) {
             throw new Error('Missing split editor root elements');
         }
         this.shell = this.container.closest('.iris-split-shell') || this.container;
 
         const sourceMount = ensurePaneMount(this.sourcePane, 'iris-split-source-mount');
-        const previewMount = ensurePaneMount(this.previewPane, 'iris-split-preview-mount');
+        const wysiwygMount = ensurePaneMount(this.wysiwygPane, 'iris-split-preview-mount');
         sourceMount.innerHTML = '';
-        previewMount.innerHTML = '';
+        wysiwygMount.innerHTML = '';
 
         this.wireSplitUi();
         await waitForMilkdown();
@@ -140,9 +150,15 @@ class SplitEditor {
         }
 
         const collabOptions = this.getCollabOptions(collab);
-        await window.IrisMilkdown.create(previewMount, initialMarkdown || '', (md) => {
-            this.handleMilkdownChange(md);
-        }, { collab: collabOptions });
+        try {
+            await window.IrisMilkdown.create(wysiwygMount, initialMarkdown || '', (md) => {
+                this.handleMilkdownChange(md);
+            }, { collab: collabOptions });
+        } catch (err) {
+            this.cleanupFns.forEach((fn) => fn());
+            this.cleanupFns = [];
+            throw err;
+        }
 
         if (this.destroyed) {
             await destroyMilkdownIfActive();
@@ -226,9 +242,7 @@ class SplitEditor {
 
         if (this.silentMarkdown !== null && markdown === this.silentMarkdown) {
             if (this.sourceView.state.doc.toString() !== markdown) {
-                this.origin = 'milkdown';
-                this.replaceSourceDoc(markdown);
-                this.origin = null;
+                this.withOrigin('milkdown', () => this.replaceSourceDoc(markdown));
             }
             this.silentMarkdown = null;
             return;
@@ -243,9 +257,7 @@ class SplitEditor {
             return;
         }
 
-        this.origin = 'milkdown';
-        this.replaceSourceDoc(markdown);
-        this.origin = null;
+        this.withOrigin('milkdown', () => this.replaceSourceDoc(markdown));
         this.emitChange(markdown);
     }
 
@@ -259,9 +271,7 @@ class SplitEditor {
         }
         const md = this.pendingSourceMd;
         this.pendingSourceMd = null;
-        this.origin = 'source';
-        window.IrisMilkdown.setMarkdown(md);
-        this.origin = null;
+        this.withOrigin('source', () => window.IrisMilkdown.setMarkdown(md));
         this.emitChange(md);
     }
 
@@ -480,7 +490,9 @@ class SplitEditor {
         }
         this.collabUsers = Array.isArray(users) ? users : [];
         this.updateSourceReadOnly();
-        this.renderCollabPresence();
+        if (!this.collabStateTimer) {
+            this.renderCollabPresence();
+        }
     }
 
     getOtherCollabUsers() {
@@ -531,9 +543,7 @@ class SplitEditor {
             if (window.IrisMilkdown && typeof window.IrisMilkdown.getMarkdown === 'function') {
                 const markdown = window.IrisMilkdown.getMarkdown() || '';
                 if (this.sourceView && this.sourceView.state.doc.toString() !== markdown) {
-                    this.origin = 'milkdown';
-                    this.replaceSourceDoc(markdown);
-                    this.origin = null;
+                    this.withOrigin('milkdown', () => this.replaceSourceDoc(markdown));
                 }
             }
         }
@@ -652,11 +662,8 @@ class SplitEditor {
         const markdown = md || '';
         this.silentMarkdown = markdown;
 
-        this.origin = 'source';
-        window.IrisMilkdown.setMarkdown(markdown);
-        this.origin = 'milkdown';
-        this.replaceSourceDoc(markdown);
-        this.origin = null;
+        this.withOrigin('source', () => window.IrisMilkdown.setMarkdown(markdown));
+        this.withOrigin('milkdown', () => this.replaceSourceDoc(markdown));
     }
 
     focus() {
@@ -710,7 +717,7 @@ class SplitEditor {
         };
 
         const setPaneWidths = (clientX) => {
-            if (!this.container || !this.sourcePane || !this.previewPane) {
+            if (!this.container || !this.sourcePane || !this.wysiwygPane) {
                 return;
             }
             if (window.matchMedia(`(max-width: ${NARROW_BREAKPOINT - 1}px)`).matches) {
@@ -730,7 +737,7 @@ class SplitEditor {
             );
             const right = available - left;
             this.sourcePane.style.flex = `0 0 ${left}px`;
-            this.previewPane.style.flex = `0 0 ${right}px`;
+            this.wysiwygPane.style.flex = `0 0 ${right}px`;
         };
 
         const startDrag = (event) => {
@@ -818,23 +825,23 @@ class SplitEditor {
     }
 
     wireFocusClasses() {
-        if (!this.sourcePane || !this.previewPane) {
+        if (!this.sourcePane || !this.wysiwygPane) {
             return;
         }
         const sourceFocus = () => {
             this.sourcePane.classList.add('is-active');
-            this.previewPane.classList.remove('is-active');
+            this.wysiwygPane.classList.remove('is-active');
         };
-        const previewFocus = () => {
-            this.previewPane.classList.add('is-active');
+        const wysiwygFocus = () => {
+            this.wysiwygPane.classList.add('is-active');
             this.sourcePane.classList.remove('is-active');
         };
 
         this.sourcePane.addEventListener('focusin', sourceFocus);
-        this.previewPane.addEventListener('focusin', previewFocus);
+        this.wysiwygPane.addEventListener('focusin', wysiwygFocus);
         this.cleanupFns.push(() => {
             this.sourcePane.removeEventListener('focusin', sourceFocus);
-            this.previewPane.removeEventListener('focusin', previewFocus);
+            this.wysiwygPane.removeEventListener('focusin', wysiwygFocus);
         });
     }
 
@@ -853,8 +860,8 @@ class SplitEditor {
         if (this.sourcePane) {
             this.sourcePane.style.flex = '';
         }
-        if (this.previewPane) {
-            this.previewPane.style.flex = '';
+        if (this.wysiwygPane) {
+            this.wysiwygPane.style.flex = '';
         }
     }
 }

@@ -651,10 +651,10 @@ async function note_detail(id) {
 
             let target_note = id;
             reset_note_collab_state(data.data.note_content || '');
-            note_split = await window.IrisSplitEditor.create({
+            const split_options = {
                 container: '#note_split',
                 sourcePane: '#note_source',
-                previewPane: '#milkdown_root',
+                wysiwygPane: '#milkdown_root',
                 divider: '#note_divider',
                 viewToggle: document.querySelector('.iris-view-toggle'),
                 initialMarkdown: data.data.note_content,
@@ -667,7 +667,13 @@ async function note_detail(id) {
                         $('#note_split').attr('data-collab-status', status || '');
                     },
                 },
-            });
+            };
+            try {
+                note_split = await window.IrisSplitEditor.create(split_options);
+            } catch (collab_error) {
+                delete split_options.collab;
+                note_split = await window.IrisSplitEditor.create(split_options);
+            }
 
             if (note_id !== target_note) {
                 await note_split.destroy();

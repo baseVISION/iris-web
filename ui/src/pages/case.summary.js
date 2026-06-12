@@ -294,7 +294,7 @@ async function open_summary_split() {
         const split_options = {
             container: '#summary_split',
             sourcePane: '#summary_source',
-            previewPane: '#summary_preview',
+            wysiwygPane: '#summary_preview',
             divider: '#summary_divider',
             viewToggle: '#summary_view_toggle',
             initialMarkdown: summary_current_markdown || '',

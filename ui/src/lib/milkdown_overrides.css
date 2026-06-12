@@ -327,9 +327,14 @@
     --crepe-color-inline-area: #2f374b;
 }
 
-/* Tighter padding inside split (Crepe default is 60px 120px) */
+/* Left padding must stay wide enough for Crepe's block handle, which is
+   translated into the left gutter. overflow-y:auto on .milkdown coerces
+   overflow-x to auto, so the handle has to live inside the content box.
+   The handle is two 32px .operation-item buttons with a 2px gap = 66px total,
+   so we allow room for the full width plus a small margin.
+   (Crepe default is 60px 120px; we keep top/right/bottom tighter.) */
 .iris-split .milkdown .ProseMirror {
-    padding: 24px 28px;
+    padding: 24px 28px 24px 84px;
 }
 
 /* ---- 7. Watermark labels -------------------------------------------------- */
@@ -505,9 +510,10 @@
         opacity: 0;
     }
 
-    /* Reduce Crepe padding on narrow screens */
+    /* Reduce Crepe padding on narrow screens, but keep enough left padding
+       for the 66px block handle to stay inside the clipped scroll box. */
     .iris-split .milkdown .ProseMirror {
-        padding: 16px 20px;
+        padding: 16px 20px 16px 80px;
     }
 
     /* Smaller watermark labels on mobile */

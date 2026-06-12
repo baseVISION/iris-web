@@ -1,5 +1,3 @@
-import { mountMarkdownSplitEditor } from '$lib/collab_editor_session';
-
 /* reload the asset table */
 g_asset_id = null;
 g_asset_desc_split = null;
@@ -12,7 +10,7 @@ function reload_assets() {
 function mount_asset_desc_split() {
     const shell = document.querySelector('#asset_desc_split_shell');
     const initial_markdown = shell ? shell.dataset.initialMarkdown : '';
-    mountMarkdownSplitEditor('asset_desc', initial_markdown)
+    window.IrisCollabSession.mountMarkdownSplitEditor('asset_desc', initial_markdown)
         .then((editor) => { g_asset_desc_split = editor; })
         .catch(() => notify_error('GUI editor failed to load'));
 }

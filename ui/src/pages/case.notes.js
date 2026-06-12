@@ -1,5 +1,4 @@
 /* Defines the kanban board */
-import { hashContent, getCollabUser, syncPostJson, waitForSplitEditor } from '$lib/collab_editor_session';
 
 let note_split;
 let session_id = null ;
@@ -48,7 +47,7 @@ function clear_note_collab_timers() {
 
 function reset_note_collab_state(markdown) {
     clear_note_collab_timers();
-    const hash = hashContent(markdown || '');
+    const hash = window.IrisCollabSession.hashContent(markdown || '');
     note_collab_last_persist_hash = hash;
     note_collab_last_snapshot_hash = hash;
     note_collab_changed_since_snapshot = false;
@@ -58,7 +57,7 @@ function note_collab_payload(markdown) {
     return {
         csrf_token: $('#csrf_token').val(),
         note_content: markdown || '',
-        client_hash: hashContent(markdown || ''),
+        client_hash: window.IrisCollabSession.hashContent(markdown || ''),
     };
 }
 
@@ -75,7 +74,7 @@ function note_collab_persist(noteId, markdown, options = {}) {
     }
 
     const md = markdown !== undefined ? markdown : get_active_note_markdown();
-    const hash = hashContent(md);
+    const hash = window.IrisCollabSession.hashContent(md);
     if (!options.force && hash === note_collab_last_persist_hash) {
         return Promise.resolve({ skipped: true, hash });
     }
@@ -106,7 +105,7 @@ function note_collab_snapshot(noteId, markdown, options = {}) {
     }
 
     const md = markdown !== undefined ? markdown : get_active_note_markdown();
-    const hash = hashContent(md);
+    const hash = window.IrisCollabSession.hashContent(md);
     if (!options.force && !note_collab_changed_since_snapshot && hash === note_collab_last_snapshot_hash) {
         return Promise.resolve({ skipped: true, hash });
     }
@@ -182,7 +181,7 @@ function schedule_note_collab_idle_snapshot() {
 
 function mark_note_collab_dirty() {
     const md = get_active_note_markdown();
-    const hash = hashContent(md);
+    const hash = window.IrisCollabSession.hashContent(md);
     note_dirty = true;
     note_collab_changed_since_snapshot = true;
     $('#btn_save_note').text(hash === note_collab_last_snapshot_hash ? "Snapshot" : "Snapshot")
@@ -193,11 +192,11 @@ function mark_note_collab_dirty() {
 }
 
 function note_collab_sync_post(uri, payload) {
-    return syncPostJson(uri, payload, get_caseid());
+    return window.IrisCollabSession.syncPostJson(uri, payload, get_caseid());
 }
 
 function note_sync_post(noteId, payload) {
-    return syncPostJson(`/case/notes/update/${noteId}`, payload, get_caseid());
+    return window.IrisCollabSession.syncPostJson(`/case/notes/update/${noteId}`, payload, get_caseid());
 }
 
 function flush_note_collab_leave_sync(noteId) {
@@ -206,7 +205,7 @@ function flush_note_collab_leave_sync(noteId) {
     }
 
     const md = get_active_note_markdown();
-    const hash = hashContent(md);
+    const hash = window.IrisCollabSession.hashContent(md);
     const csrf = $('#csrf_token').val();
     note_collab_sync_post(`/case/notes/${noteId}/collab/persist`, {
         csrf_token: csrf,
@@ -229,7 +228,7 @@ async function flush_note_collab_before_leave(noteId) {
     clear_note_collab_timers();
     await note_collab_persist_and_snapshot(noteId, md, {
         forcePersist: true,
-        forceSnapshot: note_collab_changed_since_snapshot || hashContent(md) !== note_collab_last_snapshot_hash,
+        forceSnapshot: note_collab_changed_since_snapshot || window.IrisCollabSession.hashContent(md) !== note_collab_last_snapshot_hash,
     }).catch(() => {});
 }
 
@@ -605,7 +604,7 @@ function note_revision_delete(_item, _rev) {
 
 /* Fetch the edit modal with content from server */
 function wait_for_split_editor() {
-    return waitForSplitEditor({
+    return window.IrisCollabSession.waitForSplitEditor({
         timeoutMs: NOTE_SPLIT_EDITOR_LOAD_TIMEOUT_MS,
         onTimeout: () => notify_error('GUI editor failed to load'),
     });
@@ -661,7 +660,7 @@ async function note_detail(id) {
                 onChange: mark_note_dirty,
                 collab: {
                     room: 'note-' + data.data.note_id,
-                    user: getCollabUser(),
+                    user: window.IrisCollabSession.getCollabUser(),
                     presenceTarget: '#ppl_list_viewing',
                     onStatus: function(status) {
                         $('#note_split').attr('data-collab-status', status || '');

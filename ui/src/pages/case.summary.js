@@ -1,5 +1,4 @@
 import crc32 from '$lib/utils/crc32';
-import { hashContent, getCollabUser, syncPostJson, waitForSplitEditor } from '$lib/collab_editor_session';
 
 let collaborator = null;
 let summary_split = null;
@@ -33,14 +32,14 @@ function clear_summary_collab_timers() {
 
 function reset_summary_collab_state(markdown) {
     clear_summary_collab_timers();
-    summary_collab_last_persist_hash = hashContent(markdown || '');
+    summary_collab_last_persist_hash = window.IrisCollabSession.hashContent(markdown || '');
 }
 
 function summary_collab_payload(markdown) {
     return {
         csrf_token: $('#csrf_token').val(),
         case_description: markdown || '',
-        client_hash: hashContent(markdown || ''),
+        client_hash: window.IrisCollabSession.hashContent(markdown || ''),
     };
 }
 
@@ -57,7 +56,7 @@ function mark_summary_collab_persisted(hash, data) {
 
 function summary_collab_persist(markdown, options = {}) {
     const md = markdown !== undefined ? markdown : get_active_summary_markdown();
-    const hash = hashContent(md);
+    const hash = window.IrisCollabSession.hashContent(md);
     if (!options.force && hash === summary_collab_last_persist_hash) {
         return Promise.resolve({ skipped: true, hash });
     }
@@ -97,11 +96,11 @@ function schedule_summary_collab_persist() {
 }
 
 function summary_collab_sync_post(markdown) {
-    return syncPostJson('/case/summary/collab/persist', summary_collab_payload(markdown), get_caseid());
+    return window.IrisCollabSession.syncPostJson('/case/summary/collab/persist', summary_collab_payload(markdown), get_caseid());
 }
 
 function summary_sync_post(markdown) {
-    return syncPostJson('/case/summary/update', {
+    return window.IrisCollabSession.syncPostJson('/case/summary/update', {
         case_description: markdown,
         csrf_token: $('#csrf_token').val(),
     }, get_caseid());
@@ -116,7 +115,7 @@ async function flush_summary_collab_before_close(markdown) {
 }
 
 function wait_for_split_editor() {
-    return waitForSplitEditor({
+    return window.IrisCollabSession.waitForSplitEditor({
         timeoutMs: SUMMARY_SPLIT_EDITOR_LOAD_TIMEOUT_MS,
         onTimeout: () => notify_error('GUI editor failed to load'),
     });
@@ -301,7 +300,7 @@ async function open_summary_split() {
             onChange: on_summary_split_change,
             collab: {
                 room: 'summary-' + get_caseid(),
-                user: getCollabUser(),
+                user: window.IrisCollabSession.getCollabUser(),
                 presenceTarget: '#content_typing',
                 onStatus: function(status) {
                     $('#summary_split').attr('data-collab-status', status || '');

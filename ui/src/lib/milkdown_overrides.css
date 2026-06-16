@@ -1,0 +1,746 @@
+/* IRIS overrides for the Crepe editor.
+ * Crepe's image drag-resize handle is a ~4px strip at the bottom edge of an image, only
+ * visible on hover, which is easy to miss. Make it a clearly visible grab bar with a grip. */
+
+.milkdown .milkdown-image-block > .image-wrapper > .image-resize-handle {
+    height: 12px;
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 0 0 6px 6px;
+    cursor: row-resize;
+    transition: background 0.12s ease;
+}
+
+.milkdown .milkdown-image-block:hover > .image-wrapper > .image-resize-handle {
+    background: rgba(0, 0, 0, 0.16);
+}
+
+/* Centered grip indicator so it reads as a draggable handle. */
+.milkdown .milkdown-image-block > .image-wrapper > .image-resize-handle::after {
+    content: "";
+    display: block;
+    width: 40px;
+    height: 4px;
+    margin: 4px auto 0;
+    border-radius: 2px;
+    background: rgba(0, 0, 0, 0.4);
+}
+
+
+/* ============================================================================
+   IRIS Split-Pane Editor — UX / Visual Design
+   ============================================================================
+   Scope: any split editor instance (notes full-page or summary card).
+   Theming is keyed off .iris-split-shell[data-theme] so it works everywhere.
+   ============================================================================ */
+
+/* ---- Layout helpers: make the split editor fill available height ---------- */
+.page-content.note-content {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Notes full-page: bounded viewport height so the split fills the page
+   without growing with content — each pane scrolls independently inside it. */
+.note-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: calc(100vh - 188px);
+    overflow: hidden;
+}
+
+.iris-split-shell {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Summary card shell: stay bounded so it doesn't blow out the card */
+#summary_split_shell {
+    max-height: 600px;
+}
+
+/* Asset description shell: stay bounded within the add/edit asset modal */
+#asset_desc_split_shell {
+    max-height: 400px;
+}
+
+/* ---- 1. Split container & panes ------------------------------------------ */
+.iris-split {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 480px;
+    overflow: hidden;
+    position: relative;
+}
+
+.iris-split > .iris-split-pane {
+    flex: 1 1 50%;
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: flex-basis 200ms ease-out, width 200ms ease-out, opacity 200ms ease-out, background-color 120ms ease;
+}
+
+/* ---- 2. Draggable divider ------------------------------------------------- */
+.iris-split-divider {
+    flex: 0 0 auto;
+    width: 8px;
+    cursor: col-resize;
+    position: relative;
+    z-index: 10;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+    transition: none;
+}
+
+.iris-split-divider::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(127, 127, 127, 0.15);
+    transition: none;
+}
+
+.iris-split-divider:hover::before,
+.iris-split-divider.is-dragging::before {
+    background: rgba(127, 127, 127, 0.45);
+}
+
+.iris-split-divider.is-dragging {
+    cursor: col-resize;
+}
+
+/* Disable pane transitions while dragging for instant feedback */
+.iris-split.is-resizing > .iris-split-pane {
+    transition: none;
+}
+
+/* ---- 3. Source pane (CodeMirror) — deeply scoped -------------------------- */
+/* ALL source-pane CodeMirror rules live under .iris-split-pane.iris-split-source
+   so they can never leak into Crepe's own code-block CodeMirror
+   (.milkdown .milkdown-code-block .cm-editor).                           */
+
+.iris-split-pane.iris-split-source {
+    background: #ffffff;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source {
+    background: #1a2035;
+}
+
+/* Focus tint — shift bg one shade when this pane is active */
+.iris-split-shell[data-theme="light"] .iris-split-pane.iris-split-source.is-active {
+    background: #f8f9fa;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source.is-active {
+    background: #1f283e;
+}
+
+/* Source mount: make the CodeMirror root fill the pane so the scroller
+   (overflow:auto) engages instead of growing the pane. */
+.iris-split-pane.iris-split-source .iris-split-source-mount {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* CodeMirror 6 root */
+.iris-split-pane.iris-split-source .cm-editor {
+    height: 100%;
+    outline: none !important;
+    font-family: 'Space Mono', Fira Code, Menlo, Monaco, 'Courier New', Courier, monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    background: #ffffff;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-editor {
+    background: #1a2035;
+}
+
+.iris-split-pane.iris-split-source .cm-editor .cm-scroller {
+    overflow: auto;
+}
+
+/* Editable content area */
+.iris-split-pane.iris-split-source .cm-content {
+    padding: 20px 24px;
+    caret-color: #000;
+    color: #2c2c2c;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-content {
+    caret-color: #aeafad;
+    color: #cac7c7;
+}
+
+/* Gutter */
+.iris-split-pane.iris-split-source .cm-gutters {
+    border-right: 1px solid rgba(0, 0, 0, 0.06);
+    background: #f1f3f4;
+    color: #9aa0a6;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-gutters {
+    border-right-color: #2f374b;
+    background: #121622;
+    color: #5c6370;
+}
+
+/* Selection (same blue in both dark & light for consistency with Crepe) */
+.iris-split-pane.iris-split-source .cm-selectionBackground {
+    background: #add6ff;
+}
+
+.iris-split-pane.iris-split-source .cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
+    background: #add6ff;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-selectionBackground,
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
+    background: #264f78;
+}
+
+/* Cursor */
+.iris-split-pane.iris-split-source .cm-cursor {
+    border-left-color: #000;
+    border-left-width: 2px;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-cursor {
+    border-left-color: #aeafad;
+}
+
+/* Active line */
+.iris-split-pane.iris-split-source .cm-activeLine {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.iris-split-pane.iris-split-source .cm-activeLineGutter {
+    background: rgba(0, 0, 0, 0.03);
+    color: #5f6368;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-activeLine {
+    background: #1f283e;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-activeLineGutter {
+    background: #1f283e;
+    color: #8b92a9;
+}
+
+/* ---- 4. CodeMirror token colours (light) ---------------------------------- */
+.iris-split-pane.iris-split-source .cm-keyword       { color: #a626a4; }
+.iris-split-pane.iris-split-source .cm-atom          { color: #986801; }
+.iris-split-pane.iris-split-source .cm-number        { color: #986801; }
+.iris-split-pane.iris-split-source .cm-comment       { color: #a0a1a7; font-style: italic; }
+.iris-split-pane.iris-split-source .cm-string        { color: #50a14f; }
+.iris-split-pane.iris-split-source .cm-variableName  { color: #e45649; }
+.iris-split-pane.iris-split-source .cm-tag           { color: #e45649; }
+.iris-split-pane.iris-split-source .cm-attributeName { color: #986801; }
+.iris-split-pane.iris-split-source .cm-heading       { color: #e45649; font-weight: 700; }
+.iris-split-pane.iris-split-source .cm-link         { color: #4078f2; text-decoration: underline; }
+.iris-split-pane.iris-split-source .cm-strong        { font-weight: 700; }
+.iris-split-pane.iris-split-source .cm-emphasis      { font-style: italic; }
+
+/* ---- 5. CodeMirror token colours (dark) ----------------------------------- */
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-keyword       { color: #c678dd; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-atom          { color: #d19a66; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-number        { color: #d19a66; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-comment       { color: #5c6370; font-style: italic; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-string        { color: #98c379; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-variableName  { color: #e06c75; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-tag           { color: #e06c75; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-attributeName { color: #d19a66; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-heading       { color: #e06c75; font-weight: 700; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-link         { color: #61afef; text-decoration: underline; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-strong        { font-weight: 700; }
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source .cm-emphasis      { font-style: italic; }
+
+/* ---- 6. WYSIWYG pane tweaks ----------------------------------------------- */
+.iris-split-pane.iris-split-preview {
+    background: #f5f5f5;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-preview {
+    background: #121622;
+}
+
+/* Focus tint */
+.iris-split-shell[data-theme="light"] .iris-split-pane.iris-split-preview.is-active {
+    background: #fafafa;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-preview.is-active {
+    background: #171d2b;
+}
+
+/* Preview mount: make Crepe's generated .milkdown wrapper fill the pane and
+   scroll its own content independently of the source pane. */
+.iris-split-pane.iris-split-preview .iris-split-preview-mount {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.iris-split-pane.iris-split-preview .iris-split-preview-mount .milkdown {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* Crepe variable overrides for dark mode inside the split (playground-style) */
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-preview .milkdown {
+    --crepe-color-background: #121622;
+    --crepe-color-on-background: #e0e0e0;
+    --crepe-color-surface: #1a2035;
+    --crepe-color-surface-low: #151b2b;
+    --crepe-color-on-surface: #cac7c7;
+    --crepe-color-on-surface-variant: #8b92a9;
+    --crepe-color-outline: #5c6370;
+    --crepe-color-primary: #66aaff;
+    --crepe-color-secondary: #2f374b;
+    --crepe-color-on-secondary: #e0e0e0;
+    --crepe-color-inverse: #1f283e;
+    --crepe-color-on-inverse: #f0f0f0;
+    --crepe-color-inline-code: #ff7b72;
+    --crepe-color-error: #f85149;
+    --crepe-color-hover: #1f283e;
+    --crepe-color-selected: #264f78;
+    --crepe-color-inline-area: #2f374b;
+}
+
+/* Left padding must stay wide enough for Crepe's block handle, which is
+   translated into the left gutter. overflow-y:auto on .milkdown coerces
+   overflow-x to auto, so the handle has to live inside the content box.
+   The handle is two 32px .operation-item buttons with a 2px gap = 66px total,
+   so we allow room for the full width plus a small margin.
+   (Crepe default is 60px 120px; we keep top/right/bottom tighter.) */
+.iris-split .milkdown .ProseMirror {
+    padding: 24px 28px 24px 84px;
+}
+
+/* ---- 7. Watermark labels -------------------------------------------------- */
+.iris-split-label {
+    position: absolute;
+    bottom: 12px;
+    right: 16px;
+    pointer-events: none;
+    user-select: none;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #2c2c2c;
+    opacity: 0.06;
+    z-index: 5;
+    transition: opacity 200ms ease;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-label {
+    color: #8b92a9;
+    opacity: 0.06;
+}
+
+/* Brighten when the pane is blurred (i.e. NOT .is-active) */
+.iris-split-pane:not(.is-active) .iris-split-label {
+    opacity: 0.25;
+}
+
+/* ---- 8. Pasted-image border + checkerboard (transparency) ----------------- */
+.iris-split-shell[data-theme="light"] .milkdown img[src] {
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    background-color: #ffffff;
+    background-image:
+        linear-gradient(45deg, #f5f5f5 25%, transparent 25%),
+        linear-gradient(-45deg, #f5f5f5 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #f5f5f5 75%),
+        linear-gradient(-45deg, transparent 75%, #f5f5f5 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+}
+
+.iris-split-shell[data-theme="dark"] .milkdown img[src] {
+    border: 1px solid #2f374b;
+    border-radius: 4px;
+    background-color: #151b2b;
+    background-image:
+        linear-gradient(45deg, #1a2235 25%, transparent 25%),
+        linear-gradient(-45deg, #1a2235 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #1a2235 75%),
+        linear-gradient(-45deg, transparent 75%, #1a2235 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+}
+
+/* ---- 9. View toggle (Split / Source / Preview) ---------------------------- */
+.iris-view-toggle {
+    display: inline-flex;
+    align-items: center;
+    background: rgba(0, 0, 0, 0.04);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 6px;
+    padding: 2px;
+    gap: 2px;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-view-toggle {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.iris-view-toggle button {
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: #5f6368;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 5px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 120ms ease, color 120ms ease;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-view-toggle button {
+    color: #8b92a9;
+}
+
+.iris-view-toggle button:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: #2c2c2c;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-view-toggle button:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #e0e0e0;
+}
+
+.iris-view-toggle button.is-active,
+.iris-view-toggle button[aria-pressed="true"] {
+    background: #ffffff;
+    color: #2c2c2c;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+
+.iris-split-shell[data-theme="dark"] .iris-view-toggle button.is-active,
+.iris-split-shell[data-theme="dark"] .iris-view-toggle button[aria-pressed="true"] {
+    background: #2f374b;
+    color: #f0f0f0;
+    box-shadow: none;
+}
+
+/* ---- 10. View-mode pane visibility overrides ------------------------------ */
+.iris-split.view-source > .iris-split-pane.iris-split-preview,
+.iris-split.view-preview > .iris-split-pane.iris-split-source {
+    flex: 0 0 0px;
+    width: 0px;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.iris-split.view-source > .iris-split-divider,
+.iris-split.view-preview > .iris-split-divider {
+    display: none;
+}
+
+.iris-split.view-source > .iris-split-pane.iris-split-source,
+.iris-split.view-preview > .iris-split-pane.iris-split-preview {
+    flex: 1 1 100%;
+}
+
+/* ---- 11. Responsive collapse under 900px ---------------------------------- */
+@media (max-width: 899px) {
+    .iris-split {
+        flex-direction: column;
+    }
+
+    .iris-split > .iris-split-pane {
+        flex: 1 1 auto;
+        width: 100% !important;
+        height: 50%;
+        min-height: 180px;
+    }
+
+    .iris-split-divider {
+        display: none;
+    }
+
+    /* In split mode on narrow screens, stack vertically */
+    .iris-split.view-split > .iris-split-pane {
+        flex: 1 1 auto;
+        opacity: 1;
+        width: 100%;
+        height: 50%;
+    }
+
+    /* Single-pane modes: shown pane takes full height */
+    .iris-split.view-source > .iris-split-pane.iris-split-source,
+    .iris-split.view-preview > .iris-split-pane.iris-split-preview {
+        flex: 1 1 100%;
+        height: 100%;
+        width: 100%;
+        opacity: 1;
+    }
+
+    .iris-split.view-source > .iris-split-pane.iris-split-preview,
+    .iris-split.view-preview > .iris-split-pane.iris-split-source {
+        flex: 0 0 0px;
+        height: 0px;
+        opacity: 0;
+    }
+
+    /* Reduce Crepe padding on narrow screens, but keep enough left padding
+       for the 66px block handle to stay inside the clipped scroll box. */
+    .iris-split .milkdown .ProseMirror {
+        padding: 16px 20px 16px 80px;
+    }
+
+    /* Smaller watermark labels on mobile */
+    .iris-split-label {
+        font-size: 9px;
+        bottom: 8px;
+        right: 10px;
+    }
+}
+
+/* ============================================================================
+   Collaboration UI — Real-time cursors, presence, connection state, read-only badge
+   ============================================================================
+   Scope: split editor during Yjs collaborative editing.
+   Theming via .iris-split-shell[data-theme] (dark primary, light supported).
+   Per-user cursor colours are driven by inline --iris-cursor-color.
+   No animations (serious IR-tool aesthetic).
+   ============================================================================ */
+
+/* ---- 1. REMOTE CURSORS (y-prosemirror inside .milkdown .ProseMirror) ------- */
+
+.milkdown .ProseMirror .ProseMirror-yjs-cursor {
+    position: relative;
+    border-left: 2px solid var(--iris-cursor-color, #66aaff);
+    margin-left: -2px;
+    pointer-events: none;
+    word-break: normal;
+}
+
+/* Name pill — floating above the caret, coloured to match the user */
+.milkdown .ProseMirror .ProseMirror-yjs-cursor > * {
+    position: absolute;
+    top: -22px;
+    left: -2px;
+    white-space: nowrap;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 3px 6px;
+    border-radius: 4px;
+    background: var(--iris-cursor-color, #66aaff);
+    color: #ffffff;
+    opacity: 0.95;
+    pointer-events: none;
+    user-select: none;
+    z-index: 20;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* Translucent selection wash for remote selections */
+.milkdown .ProseMirror .ProseMirror-yjs-selection {
+    background: var(--iris-cursor-color, #66aaff);
+    opacity: 0.16;
+    pointer-events: none;
+}
+
+/* ---- 2. PRESENCE BAR (header avatar stack + connection status) ------------- */
+
+.iris-collab-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 2px 0;
+}
+
+/* Avatar stack */
+.iris-collab-avatars {
+    display: inline-flex;
+    align-items: center;
+}
+
+.iris-collab-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    font-size: 10px;
+    font-weight: 700;
+    color: #ffffff;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    margin-left: -6px;
+    border: 2px solid #ffffff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+}
+
+.iris-collab-avatars .iris-collab-avatar:first-child {
+    margin-left: 0;
+}
+
+/* Stacking order: first in DOM (leftmost) on top */
+.iris-collab-avatars .iris-collab-avatar:nth-child(1) { z-index: 5; }
+.iris-collab-avatars .iris-collab-avatar:nth-child(2) { z-index: 4; }
+.iris-collab-avatars .iris-collab-avatar:nth-child(3) { z-index: 3; }
+.iris-collab-avatars .iris-collab-avatar:nth-child(4) { z-index: 2; }
+.iris-collab-avatars .iris-collab-avatar:nth-child(5) { z-index: 1; }
+
+/* Overflow chip ("+N") */
+.iris-collab-avatar.iris-collab-more {
+    background: #5c6370;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+/* Dark / light border colours so overlap looks like stacked rings */
+.iris-split-shell[data-theme="light"] .iris-collab-avatar {
+    border-color: #ffffff;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-collab-avatar {
+    border-color: #121622;
+}
+
+/* Connection status dot */
+.iris-collab-status {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-block;
+}
+
+/* State colours — static only (no animations per design brief) */
+.iris-collab-status.is-live {
+    background: #34d399;
+}
+
+/* Solo = connected & saving, but no other collaborators (muted neutral grey) */
+.iris-collab-status.is-solo {
+    background: #9aa0a6;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-collab-status.is-solo {
+    background: #5c6370;
+}
+
+.iris-collab-status.is-syncing {
+    background: #e5a50a;
+    opacity: 0.85;
+}
+
+.iris-collab-status.is-reconnecting {
+    background: #f85149;
+    opacity: 0.75;
+}
+
+.iris-collab-status.is-offline {
+    background: #f85149;
+}
+
+/* Status text label */
+.iris-collab-status-text {
+    font-size: 11px;
+    font-weight: 500;
+    color: #5f6368;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-collab-status-text {
+    color: #8b92a9;
+}
+
+/* ---- 3. CONNECTION-STATE BORDER on PREVIEW pane ---------------------------- */
+
+/* Ensure border-box so the 2px top border never shifts content */
+.iris-split-pane.iris-split-preview {
+    box-sizing: border-box;
+}
+
+/* Syncing = amber */
+.iris-split-shell.collab-syncing .iris-split-pane.iris-split-preview {
+    border-top: 2px solid #e5a50a;
+}
+
+/* Live = transparent (deliberately subtle so it is not noisy when stable) */
+.iris-split-shell.collab-live .iris-split-pane.iris-split-preview {
+    border-top: 2px solid transparent;
+}
+
+/* Reconnecting / Offline = red */
+.iris-split-shell.collab-reconnecting .iris-split-pane.iris-split-preview,
+.iris-split-shell.collab-offline .iris-split-pane.iris-split-preview {
+    border-top: 2px solid #f85149;
+}
+
+/* ---- 4. READ-ONLY SOURCE BADGE + DIMMING ----------------------------------- */
+
+.iris-collab-liveview-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    line-height: 1;
+    pointer-events: none;
+    user-select: none;
+    opacity: 0.65;
+    background: rgba(0, 0, 0, 0.05);
+    color: #5f6368;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.iris-split-shell[data-theme="dark"] .iris-collab-liveview-badge {
+    background: rgba(255, 255, 255, 0.06);
+    color: #8b92a9;
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Dim source pane when it is read-only during collab */
+.iris-split-pane.iris-split-source.is-collab-readonly {
+    opacity: 0.72;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-split-pane.iris-split-source.is-collab-readonly {
+    opacity: 0.65;
+}

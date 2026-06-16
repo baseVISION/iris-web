@@ -36,26 +36,9 @@
                                 </div>
                                 <div class="form-group mt-3">
                                     <label for="asset_description" class="placeholder">Description</label>
-                                     <div class="md_description_field">
-                                            <div class="form-group mt--2">
-                                                <button type="button" class="float-right icon-note btn btn-circle btn-sm mt-2" onclick="edit_in_asset_desc();">
-                                                </button>
-                                                <button type="button" style="display: none;" class="btn btn-dark btn-sm float-right mr-2 mt-2" onclick="preview_asset_description();" id="asset_preview_button"><i class="fa-solid fa-eye"></i></button>
-                                        </div>
-                                        <div class="row">
-                                            <div class="col mb--2 ml--2" id="asset_edition_btn" style="display:none;">
-                                            </div>
-                                        </div>
-                                        <div class="row" style="margin-left:0px;">
-                                            <div class="col-12" id="container_asset_desc_content">
-                                                <div id="asset_description" contenteditable="true" spellcheck="true" class="mr-2" data-theme="{% if current_user.in_dark_mode %}dark{% else %}light{% endif %}">{% if asset %}{{ asset.asset_description  }}{% endif %}</div>
-                                                <textarea id="asset_desc_content" rows="10" cols="82" style="display: none"></textarea>
-                                            </div>
-                                            <div class="col-12" id="container_asset_description" style="display:none">
-                                                <div id="target_asset_desc"></div>
-                                            </div>
-                                        </div>
-                                    </div>
+                                    {% set split_prefix = 'asset_desc' %}
+                                    {% set split_initial_markdown = asset.asset_description if asset else '' %}
+                                    {% include "_markdown_split_editor.html" %}
                                 </div>
                                 <div class="form-row ml-2">
                                     <div class="form-group col-6">

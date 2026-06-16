@@ -233,8 +233,13 @@ def cases_update(case: Cases, updated_case, protagonists, tags) -> Cases:
         raise BusinessProcessingError('Data error', str(e))
 
 
-def cases_export_to_json(case_id):
-    """Fully export a case a JSON"""
+def cases_export_to_json(case_id, for_docx=False):
+    """Fully export a case a JSON.
+
+    for_docx: when True, datastore image links in markdown are prepared for the DOCX
+    generator (absolutized + width carried as &iriswidth=). Defaults to False so the REST
+    API and Markdown exports keep their existing behavior.
+    """
     export = {}
     case = export_caseinfo_json(case_id)
 
@@ -242,16 +247,16 @@ def cases_export_to_json(case_id):
         export['errors'] = ['Invalid case number']
         return export
 
-    case['description'] = process_md_images_links_for_report(case['description'])
+    case['description'] = process_md_images_links_for_report(case['description'], for_docx=for_docx)
 
     export['case'] = case
     export['evidences'] = export_case_evidences_json(case_id)
     export['timeline'] = export_case_tm_json(case_id)
     export['iocs'] = iocs_exports_to_json(case_id)
-    export['assets'] = export_case_assets_json(case_id)
+    export['assets'] = export_case_assets_json(case_id, for_docx=for_docx)
     export['tasks'] = export_case_tasks_json(case_id)
     export['comments'] = export_case_comments_json(case_id)
-    export['notes'] = export_case_notes_json(case_id)
+    export['notes'] = export_case_notes_json(case_id, for_docx=for_docx)
     export['export_date'] = datetime.datetime.utcnow()
 
     return export

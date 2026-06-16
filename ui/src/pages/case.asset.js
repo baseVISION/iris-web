@@ -1,29 +1,25 @@
 /* reload the asset table */
 g_asset_id = null;
-g_asset_desc_editor = null;
+g_asset_desc_split = null;
 
 
 function reload_assets() {
     get_case_assets();
 }
 
-function edit_in_asset_desc() {
-
-    if($('#container_asset_desc_content').is(':visible')) {
-        $('#container_asset_description').show(100);
-        $('#container_asset_desc_content').hide(100);
-        $('#asset_edition_btn').hide(100);
-        $('#asset_preview_button').hide(100);
-    } else {
-        $('#asset_preview_button').show(100);
-        $('#asset_edition_btn').show(100);
-        $('#container_asset_desc_content').show(100);
-        $('#container_asset_description').hide(100);
-    }
+function mount_asset_desc_split() {
+    const shell = document.querySelector('#asset_desc_split_shell');
+    const initial_markdown = shell ? shell.dataset.initialMarkdown : '';
+    window.IrisCollabSession.mountMarkdownSplitEditor('asset_desc', initial_markdown)
+        .then((editor) => { g_asset_desc_split = editor; })
+        .catch(() => notify_error('GUI editor failed to load'));
 }
 
 /* Fetch a modal that is compatible with the requested asset type */
 function add_assets() {
+    const ready = g_asset_desc_split ? g_asset_desc_split.destroy() : Promise.resolve();
+    g_asset_desc_split = null;
+    ready.then(() => {
     url = '/case/assets/add/modal' + case_param();
     $('#modal_add_asset_content').load(url, function (response, status, xhr) {
         hide_minimized_modal_box();
@@ -32,16 +28,7 @@ function add_assets() {
              return false;
         }
 
-        g_asset_desc_editor = get_new_ace_editor('asset_description', 'asset_desc_content', 'target_asset_desc',
-                            function() {
-                                $('#last_saved').addClass('btn-danger').removeClass('btn-success');
-                                $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
-                            }, null);
-        g_asset_desc_editor.setOption("minLines", "10");
-        edit_in_asset_desc();
-
-        let headers = get_editor_headers('g_asset_desc_editor', null, 'asset_edition_btn');
-        $('#asset_edition_btn').append(headers);
+        mount_asset_desc_split();
 
         $('#ioc_links').select2({});
 
@@ -64,7 +51,7 @@ function add_assets() {
                     data["ioc_links"] = [data["ioc_links"]]
                 }
                 data['asset_tags'] = $('#asset_tags').val();
-                data['asset_description'] = g_asset_desc_editor.getValue();
+                data['asset_description'] = g_asset_desc_split ? g_asset_desc_split.getMarkdown() : '';
                 let ret = get_custom_attributes_fields();
                 let has_error = ret[0].length > 0;
                 let attributes = ret[1];
@@ -114,6 +101,7 @@ function add_assets() {
     });
 
     $('.dtr-modal').hide();
+    });
 }
 
 /* Retrieve the list of assets and build a datatable for each type of asset */
@@ -226,7 +214,9 @@ function delete_asset(asset_id) {
 
 /* Fetch the details of an asset and allow modification */
 function asset_details(asset_id) {
-
+    const ready = g_asset_desc_split ? g_asset_desc_split.destroy() : Promise.resolve();
+    g_asset_desc_split = null;
+    ready.then(() => {
     url = '/case/assets/' + asset_id + '/modal' + case_param();
     $('#modal_add_asset_content').load(url, function (response, status, xhr) {
         hide_minimized_modal_box();
@@ -235,17 +225,7 @@ function asset_details(asset_id) {
              return false;
         }
         g_asset_id = asset_id;
-        g_asset_desc_editor = get_new_ace_editor('asset_description', 'asset_desc_content', 'target_asset_desc',
-                            function() {
-                                $('#last_saved').addClass('btn-danger').removeClass('btn-success');
-                                $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
-                            }, null, false, false);
-
-        g_asset_desc_editor.setOption("minLines", "10");
-        preview_asset_description(true);
-        headers = get_editor_headers('g_asset_desc_editor', null, 'asset_edition_btn');
-
-        $('#asset_edition_btn').append(headers);
+        mount_asset_desc_split();
 
         $('#ioc_links').select2({});
 
@@ -259,35 +239,10 @@ function asset_details(asset_id) {
         $('.dtr-modal').hide();
 
         $('#modal_add_asset').modal({ show: true });
-        edit_in_asset_desc();
+    });
     });
 
-
     return false;
-}
-
-function preview_asset_description(no_btn_update) {
-    if(!$('#container_asset_description').is(':visible')) {
-        asset_desc = g_asset_desc_editor.getValue();
-        converter = get_showdown_convert();
-        html = converter.makeHtml(do_md_filter_xss(asset_desc));
-        asset_desc_html = do_md_filter_xss(html);
-        $('#target_asset_desc').html(asset_desc_html);
-        $('#container_asset_description').show();
-        if (!no_btn_update) {
-            $('#asset_preview_button').html('<i class="fa-solid fa-eye-slash"></i>');
-        }
-        $('#container_asset_desc_content').hide();
-    }
-    else {
-        $('#container_asset_description').hide();
-         if (!no_btn_update) {
-            $('#asset_preview_button').html('<i class="fa-solid fa-eye"></i>');
-        }
-
-        $('#asset_preview_button').html('<i class="fa-solid fa-eye"></i>');
-        $('#container_asset_desc_content').show();
-    }
 }
 
 
@@ -316,7 +271,7 @@ function update_asset(do_close){
         data["ioc_links"] = [];
     }
     data['asset_tags'] = $('#asset_tags').val();
-    data['asset_description'] = g_asset_desc_editor.getValue();
+    data['asset_description'] = g_asset_desc_split ? g_asset_desc_split.getMarkdown() : '';
 
     ret = get_custom_attributes_fields();
     has_error = ret[0].length > 0;

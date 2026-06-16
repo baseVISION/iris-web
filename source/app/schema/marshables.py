@@ -2450,6 +2450,39 @@ class CaseSchemaForAPIV2(ma.SQLAlchemyAutoSchema):
 
         raise ValidationError('Invalid client id', field_name='case_customer_id')
 
+    @post_load
+    def custom_attributes_merge(self, data: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        """Rehydrate flattened custom attributes into the full definition structure.
+
+        Without this, a v2 API client posting the flattened ``{tab: {field: value}}`` wire
+        form would persist it as-is, dropping the per-field type/options/mandatory metadata and
+        making the attribute tabs render blank. Mirrors CaseSchema.custom_attributes_merge so
+        v2 writes go through merge_custom_attributes like the UI/manage path.
+
+        Args:
+            data: The data to load.
+            kwargs: Additional keyword arguments.
+
+        Returns:
+            The loaded data with merged custom attributes.
+        """
+        new_attr = data.get('custom_attributes')
+
+        assert_type_mml(input_var=new_attr,
+                        field_name='custom_attributes',
+                        type=dict,
+                        allow_none=True)
+
+        assert_type_mml(input_var=data.get('case_id'),
+                        field_name='case_id',
+                        type=int,
+                        allow_none=True)
+
+        if new_attr is not None:
+            data['custom_attributes'] = merge_custom_attributes(new_attr, data.get('case_id'), 'case')
+
+        return data
+
 
 class CaseDetailsSchema(ma.SQLAlchemyAutoSchema):
     """Schema for serializing and deserializing Case objects in details."""

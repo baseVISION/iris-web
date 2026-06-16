@@ -1,10 +1,9 @@
 /* Defines the kanban board */
-let note_editor;
+
+let note_split;
 let session_id = null ;
 let collaborator = null ;
 let collaborator_socket = null ;
-let last_applied_change = null ;
-let just_cleared_buffer = null ;
 let is_typing = "";
 let ppl_viewing = new Map();
 let timer_socket = 0;
@@ -14,6 +13,224 @@ let cid = null;
 let previousNoteTitle = null;
 let timer = null;
 let timeout = 5000;
+let note_dirty = false;
+let note_collab_persist_timer = null;
+let note_collab_idle_snapshot_timer = null;
+let note_collab_last_persist_hash = null;
+let note_collab_last_snapshot_hash = null;
+let note_collab_changed_since_snapshot = false;
+
+const NOTE_COLLAB_PERSIST_DEBOUNCE_MS = 4000;
+const NOTE_COLLAB_IDLE_SNAPSHOT_MS = 60000;
+const NOTE_SPLIT_EDITOR_LOAD_TIMEOUT_MS = 10000;
+
+function is_note_collab_active() {
+    return !!(note_split && typeof note_split.isCollabActive === 'function' && note_split.isCollabActive());
+}
+
+function is_note_collab_last_client() {
+    return !note_split
+        || typeof note_split.isLastCollabClient !== 'function'
+        || note_split.isLastCollabClient();
+}
+
+function clear_note_collab_timers() {
+    if (note_collab_persist_timer) {
+        clearTimeout(note_collab_persist_timer);
+        note_collab_persist_timer = null;
+    }
+    if (note_collab_idle_snapshot_timer) {
+        clearTimeout(note_collab_idle_snapshot_timer);
+        note_collab_idle_snapshot_timer = null;
+    }
+}
+
+function reset_note_collab_state(markdown) {
+    clear_note_collab_timers();
+    const hash = window.IrisCollabSession.hashContent(markdown || '');
+    note_collab_last_persist_hash = hash;
+    note_collab_last_snapshot_hash = hash;
+    note_collab_changed_since_snapshot = false;
+}
+
+function note_collab_payload(markdown) {
+    return {
+        csrf_token: $('#csrf_token').val(),
+        note_content: markdown || '',
+        client_hash: window.IrisCollabSession.hashContent(markdown || ''),
+    };
+}
+
+function note_collab_mark_persisted(hash) {
+    note_collab_last_persist_hash = hash;
+    note_dirty = false;
+    $("#content_last_saved_by").text('Last persisted by you');
+    $('#btn_save_note').text("Snapshot").removeClass('btn-success btn-danger btn-warning').addClass('btn-light');
+}
+
+function note_collab_persist(noteId, markdown, options = {}) {
+    if (!noteId) {
+        return Promise.resolve({ skipped: true });
+    }
+
+    const md = markdown !== undefined ? markdown : get_active_note_markdown();
+    const hash = window.IrisCollabSession.hashContent(md);
+    if (!options.force && hash === note_collab_last_persist_hash) {
+        return Promise.resolve({ skipped: true, hash });
+    }
+
+    return new Promise((resolve, reject) => {
+        post_request_api(
+            `/case/notes/${noteId}/collab/persist`,
+            JSON.stringify(note_collab_payload(md)),
+            false,
+            undefined,
+            cid
+        )
+        .done((data) => {
+            if (api_request_failed(data)) {
+                reject(data);
+                return;
+            }
+            note_collab_mark_persisted(hash);
+            resolve({ skipped: false, hash, data });
+        })
+        .fail(reject);
+    });
+}
+
+function note_collab_snapshot(noteId, markdown, options = {}) {
+    if (!noteId) {
+        return Promise.resolve({ skipped: true });
+    }
+
+    const md = markdown !== undefined ? markdown : get_active_note_markdown();
+    const hash = window.IrisCollabSession.hashContent(md);
+    if (!options.force && !note_collab_changed_since_snapshot && hash === note_collab_last_snapshot_hash) {
+        return Promise.resolve({ skipped: true, hash });
+    }
+
+    return new Promise((resolve, reject) => {
+        post_request_api(
+            `/case/notes/${noteId}/collab/snapshot`,
+            JSON.stringify({
+                csrf_token: $('#csrf_token').val(),
+                client_hash: hash,
+            }),
+            false,
+            undefined,
+            cid
+        )
+        .done((data) => {
+            if (api_request_failed(data)) {
+                reject(data);
+                return;
+            }
+            note_collab_last_snapshot_hash = hash;
+            note_collab_changed_since_snapshot = false;
+            $('#btn_save_note').text(data.data && data.data.revision_created ? "Snapshotted" : "Snapshot")
+                .addClass('btn-success')
+                .removeClass('btn-danger btn-warning');
+            resolve({
+                skipped: false,
+                hash,
+                revision_created: !!(data.data && data.data.revision_created),
+                data,
+            });
+        })
+        .fail(reject);
+    });
+}
+
+async function note_collab_persist_and_snapshot(noteId, markdown, options = {}) {
+    const md = markdown !== undefined ? markdown : get_active_note_markdown();
+    await note_collab_persist(noteId, md, { force: options.forcePersist });
+    return note_collab_snapshot(noteId, md, { force: options.forceSnapshot });
+}
+
+function schedule_note_collab_persist() {
+    const n_id = $('#currentNoteIDLabel').data('note_id');
+    if (!n_id) {
+        return;
+    }
+    if (note_collab_persist_timer) {
+        clearTimeout(note_collab_persist_timer);
+    }
+    note_collab_persist_timer = setTimeout(() => {
+        note_collab_persist_timer = null;
+        note_collab_persist(n_id).catch(() => {});
+    }, NOTE_COLLAB_PERSIST_DEBOUNCE_MS);
+}
+
+function schedule_note_collab_idle_snapshot() {
+    const n_id = $('#currentNoteIDLabel').data('note_id');
+    if (!n_id) {
+        return;
+    }
+    if (note_collab_idle_snapshot_timer) {
+        clearTimeout(note_collab_idle_snapshot_timer);
+    }
+    note_collab_idle_snapshot_timer = setTimeout(() => {
+        note_collab_idle_snapshot_timer = null;
+        if (!note_collab_changed_since_snapshot) {
+            return;
+        }
+        note_collab_persist_and_snapshot(n_id).catch(() => {});
+    }, NOTE_COLLAB_IDLE_SNAPSHOT_MS);
+}
+
+function mark_note_collab_dirty() {
+    const md = get_active_note_markdown();
+    const hash = window.IrisCollabSession.hashContent(md);
+    note_dirty = true;
+    note_collab_changed_since_snapshot = true;
+    $('#btn_save_note').text(hash === note_collab_last_snapshot_hash ? "Snapshot" : "Snapshot")
+        .removeClass('btn-success btn-danger')
+        .addClass('btn-warning');
+    schedule_note_collab_persist();
+    schedule_note_collab_idle_snapshot();
+}
+
+function note_collab_sync_post(uri, payload) {
+    return window.IrisCollabSession.syncPostJson(uri, payload, get_caseid());
+}
+
+function note_sync_post(noteId, payload) {
+    return window.IrisCollabSession.syncPostJson(`/case/notes/update/${noteId}`, payload, get_caseid());
+}
+
+function flush_note_collab_leave_sync(noteId) {
+    if (!noteId || !is_note_collab_active() || !is_note_collab_last_client()) {
+        return;
+    }
+
+    const md = get_active_note_markdown();
+    const hash = window.IrisCollabSession.hashContent(md);
+    const csrf = $('#csrf_token').val();
+    note_collab_sync_post(`/case/notes/${noteId}/collab/persist`, {
+        csrf_token: csrf,
+        note_content: md,
+        client_hash: hash,
+    });
+    note_collab_sync_post(`/case/notes/${noteId}/collab/snapshot`, {
+        csrf_token: csrf,
+        client_hash: hash,
+    });
+}
+
+async function flush_note_collab_before_leave(noteId) {
+    if (!noteId || !is_note_collab_active() || !is_note_collab_last_client()) {
+        clear_note_collab_timers();
+        return;
+    }
+
+    const md = get_active_note_markdown();
+    clear_note_collab_timers();
+    await note_collab_persist_and_snapshot(noteId, md, {
+        forcePersist: true,
+        forceSnapshot: note_collab_changed_since_snapshot || window.IrisCollabSession.hashContent(md) !== note_collab_last_snapshot_hash,
+    }).catch(() => {});
+}
 
 
 const preventFormDefaultBehaviourOnSubmit = (event) => {
@@ -27,76 +244,53 @@ function Collaborator( session_id, n_id ) {
 
     this.channel = "case-" + session_id + "-notes";
 
-    this.collaboration_socket.off("change-note");
-    this.collaboration_socket.off("clear_buffer-note");
     this.collaboration_socket.off("save-note");
     this.collaboration_socket.off("leave-note");
-    this.collaboration_socket.off("join-note");
+    this.collaboration_socket.off("join-notes");
     this.collaboration_socket.off("pong-note");
     this.collaboration_socket.off("disconnect");
 
-
-    this.collaboration_socket.on("change-note", function (data) {
-        // Set as int to avoid type mismatch
-        if (parseInt(data.note_id) !== parseInt(note_id)) return;
-
-        let delta = JSON.parse(data.delta);
-        last_applied_change = delta;
-        $("#content_typing").text(data.last_change + " is typing..");
-        if (delta !== null && delta !== undefined) {
-            note_editor.session.getDocument().applyDeltas([delta]);
-        }
-    }.bind());
-
-    this.collaboration_socket.on("clear_buffer-note", function () {
-        if (parseInt(data.note_id) !== parseInt(note_id)) return;
-        just_cleared_buffer = true;
-        note_editor.setValue("");
-    }.bind());
-
     this.collaboration_socket.on("save-note", function (data) {
         if (parseInt(data.note_id) !== parseInt(note_id)) return;
+        if (is_note_collab_active()) return;
         sync_note(note_id)
             .then(function () {
                 $("#content_last_saved_by").text("Last saved by " + data.last_saved);
                 $('#btn_save_note').text("Saved").addClass('btn-success').removeClass('btn-danger').removeClass('btn-warning');
-                $('#last_saved').removeClass('btn-danger').addClass('btn-success');
-                $('#last_saved > i').attr('class', "fa-solid fa-file-circle-check");
             });
 
     }.bind());
 
     this.collaboration_socket.on('leave-note', function (data) {
+        if (is_note_collab_active()) return;
+        if (parseInt(data.note_id) !== parseInt(note_id)) return;
         ppl_viewing.delete(data.user);
         refresh_ppl_list(session_id, note_id);
     });
 
-    this.collaboration_socket.on('join-note', function (data) {
+    this.collaboration_socket.on('join-notes', function (data) {
+        if (is_note_collab_active()) return;
         if (parseInt(data.note_id) !== parseInt(note_id)) return;
-        if ((data.user in ppl_viewing)) return;
+        if (ppl_viewing.has(data.user)) return;
         ppl_viewing.set(filterXSS(data.user), 1);
         refresh_ppl_list(session_id, note_id);
         collaborator.collaboration_socket.emit('ping-note', {'channel': collaborator.channel, 'note_id': note_id});
     });
 
     this.collaboration_socket.on('ping-note', function (data) {
-        if (data.note_id !== note_id) return;
+        if (is_note_collab_active()) return;
+        if (parseInt(data.note_id) !== parseInt(note_id)) return;
         collaborator.collaboration_socket.emit('pong-note', {'channel': collaborator.channel, 'note_id': note_id});
     });
 
     this.collaboration_socket.on('disconnect', function (data) {
+        if (is_note_collab_active()) return;
         ppl_viewing.delete(data.user);
         refresh_ppl_list(session_id, note_id);
     });
 
-}
+    this.collaboration_socket.emit('join-notes', {'channel': this.channel, 'note_id': n_id});
 
-Collaborator.prototype.change = function( delta, note_id ) {
-    this.collaboration_socket.emit( "change-note", { 'delta': delta, 'channel': this.channel, 'note_id': note_id } ) ;
-}
-
-Collaborator.prototype.clear_buffer = function( note_id ) {
-    this.collaboration_socket.emit( "clear_buffer-note", { 'channel': this.channel, 'note_id': note_id } ) ;
 }
 
 Collaborator.prototype.save = function( note_id ) {
@@ -108,6 +302,10 @@ Collaborator.prototype.close = function( note_id ) {
 }
 
 function auto_remove_typing() {
+    if (is_note_collab_active()) {
+        $("#content_typing").text("");
+        return;
+    }
     if ($("#content_typing").text() == is_typing) {
         $("#content_typing").text("");
     } else {
@@ -126,6 +324,10 @@ async function get_remote_note(note_id) {
 }
 
 async function sync_note(node_id) {
+    if (is_note_collab_active()) {
+        return;
+    }
+
     // Get the remote note
     let remote_note = await get_remote_note(node_id);
     if (remote_note.status !== 'success') {
@@ -133,11 +335,14 @@ async function sync_note(node_id) {
     }
 
     // Get the local note
-    let local_note = note_editor.getValue();
+    let local_note = get_active_note_markdown();
 
     // If the local note is empty, set it to the remote note
     if (local_note === '') {
-        note_editor.setValue(remote_note.data.note_content, -1);
+        if (note_split) {
+            note_split.setMarkdown(remote_note.data.note_content);
+            note_dirty = false;
+        }
         return;
     }
 
@@ -166,9 +371,14 @@ async function sync_note(node_id) {
             .then((overwrite) => {
                 if (overwrite) {
                     // Overwrite the local note with the remote note
-                    note_editor.setValue(remote_note.data.note_content, -1);
+                    if (note_split) {
+                        note_split.setMarkdown(remote_note.data.note_content);
+                        note_dirty = false;
+                    }
                 }
             });
+    } else {
+        note_dirty = false;
     }
 
     return;
@@ -303,9 +513,10 @@ async function load_note_revisions(_item) {
                     let revision = data.data;
                     $('#previewRevisionID').text(revision.revision_number);
                     $('#notePreviewModalTitle').text(`#${revision.revision_number} - ${revision.note_title}`);
-                    let note_prev = get_new_ace_editor('notePreviewModalContent', 'note_content', 'targetDiv');
-                    note_prev.setValue(revision.note_content, -1);
-                    note_prev.setReadOnly(true);
+                    let converter = get_showdown_convert();
+                    $('#notePreviewModalContent').html(
+                        converter.makeHtml(do_md_filter_xss(revision.note_content || ''))
+                    );
                     $('#notePreviewModal').modal('show');
                 });
             });
@@ -333,11 +544,31 @@ function note_revision_revert(_item, _rev) {
         }
         let revision = data.data;
         $('#currentNoteTitle').text(revision.note_title);
-        note_editor.setValue(revision.note_content, -1);
+        if (note_split) {
+            note_split.setMarkdown(revision.note_content);
+        }
         if (close_modal) {
             $('#notePreviewModal').modal('hide');
         }
         $('#noteModificationHistoryModal').modal('hide');
+        if (is_note_collab_active()) {
+            clear_note_collab_timers();
+            note_collab_changed_since_snapshot = true;
+            note_collab_persist_and_snapshot(_item, revision.note_content || '', {
+                forcePersist: true,
+                forceSnapshot: true,
+            })
+            .then((result) => {
+                notify_success(result.revision_created
+                    ? 'Reverted to revision #' + _rev + ' and snapshotted.'
+                    : 'Reverted to revision #' + _rev + '. Latest snapshot already matched.');
+            })
+            .catch(() => {
+                notify_error('Note reverted locally, but collab snapshot failed.');
+            });
+            return;
+        }
+        mark_note_dirty();
         notify_success('Note reverted to revision #' + _rev + '. Save to apply changes.');
     });
 }
@@ -372,63 +603,93 @@ function note_revision_delete(_item, _rev) {
 }
 
 /* Fetch the edit modal with content from server */
+function wait_for_split_editor() {
+    return window.IrisCollabSession.waitForSplitEditor({
+        timeoutMs: NOTE_SPLIT_EDITOR_LOAD_TIMEOUT_MS,
+        onTimeout: () => notify_error('GUI editor failed to load'),
+    });
+}
+
 async function note_detail(id) {
 
     get_request_api(`/case/notes/${id}`)
-    .done((data) => {
+    .done(async (data) => {
         if (data.status === 'success') {
-            let timer;
-            let timeout = 10000;
-            $('#form_note').keyup(function(){
-                if(timer) {
-                     clearTimeout(timer);
-                }
-                if (ppl_viewing.size <= 1) {
-                    timer = setTimeout(save_note, timeout);
-                }
-            });
+            let previous_note_id = $('#currentNoteIDLabel').data('note_id');
 
-            note_id = id;
+            if (timer) {
+                clearTimeout(timer);
+                timer = null;
+            }
+
+            if (note_split) {
+                let previous_note_markdown = previous_note_id ? note_split.getMarkdown() : null;
+                if (is_note_collab_active()) {
+                    await flush_note_collab_before_leave(previous_note_id);
+                } else if (note_dirty && previous_note_id) {
+                    silent_save_note(previous_note_id, previous_note_markdown);
+                }
+                await note_split.destroy();
+                note_split = null;
+                note_dirty = false;
+            }
 
             if (collaborator !== null) {
-                collaborator.close(note_id);
+                collaborator.close(previous_note_id);
             }
 
-            collaborator = new Collaborator( get_caseid() );
+            note_id = id;
+            collaborator = null;
 
-            // Destroy the note editor if it exists
-            if (note_editor !== undefined && note_editor !== null) {
-                note_editor.destroy();
-                note_editor = null;
-            }
+            await wait_for_split_editor();
 
-            note_editor = get_new_ace_editor('editor_detail', 'note_content', 'targetDiv', function () {
-                $('#last_saved').addClass('btn-danger').removeClass('btn-success');
-                $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
-                $('#btn_save_note').text("Save").removeClass('btn-success').addClass('btn-warning').removeClass('btn-danger');
-            }, save_note);
-
-            note_editor.focus();
-
-            note_editor.setValue(data.data.note_content, -1);
             $('#currentNoteTitle').text(data.data.note_title);
             previousNoteTitle = data.data.note_title;
             $('#currentNoteIDLabel').text(`#${data.data.note_id} - ${data.data.note_uuid}`)
                 .data('note_id', data.data.note_id);
 
-            note_editor.on( "change", function( e ) {
-                if( last_applied_change != e && note_editor.curOp && note_editor.curOp.command.name) {
-                    console.log('Change detected - signaling teammates');
-                    collaborator.change( JSON.stringify(e), note_id ) ;
-                }
-                }, false
-            );
-            last_applied_change = null ;
-            just_cleared_buffer = false ;
+            let target_note = id;
+            reset_note_collab_state(data.data.note_content || '');
+            const split_options = {
+                container: '#note_split',
+                sourcePane: '#note_source',
+                wysiwygPane: '#milkdown_root',
+                divider: '#note_divider',
+                viewToggle: document.querySelector('.iris-view-toggle'),
+                initialMarkdown: data.data.note_content,
+                onChange: mark_note_dirty,
+                collab: {
+                    room: 'note-' + data.data.note_id,
+                    user: window.IrisCollabSession.getCollabUser(),
+                    presenceTarget: '#ppl_list_viewing',
+                    onStatus: function(status) {
+                        $('#note_split').attr('data-collab-status', status || '');
+                    },
+                },
+            };
+            try {
+                note_split = await window.IrisSplitEditor.create(split_options);
+            } catch (collab_error) {
+                delete split_options.collab;
+                note_split = await window.IrisSplitEditor.create(split_options);
+            }
+
+            if (note_id !== target_note) {
+                await note_split.destroy();
+                note_split = null;
+                return false;
+            }
+
+            note_split.focus();
+            if (!is_note_collab_active()) {
+                collaborator = new Collaborator(get_caseid(), id);
+            }
 
             load_menu_mod_options_modal(id, 'note', $("#note_quick_actions"));
 
-            collaborator_socket.emit('ping-note', { 'channel': 'case-' + get_caseid() + '-notes', 'note_id': note_id });
+            if (!is_note_collab_active()) {
+                collaborator_socket.emit('ping-note', { 'channel': 'case-' + get_caseid() + '-notes', 'note_id': note_id });
+            }
 
             toggleNoteEditor(true);
 
@@ -438,21 +699,8 @@ async function note_detail(id) {
             $('#object_comments_number').text(data.data.comments.length > 0 ? data.data.comments.length: '');
             $('#content_last_saved_by').text('');
             $('#content_typing').text('');
-            $('#last_saved').removeClass('btn-danger').addClass('btn-success');
-            $('#last_saved > i').attr('class', "fa-solid fa-file-circle-check");
-
-            let ed_details = $('#editor_detail');
-            ed_details.keyup(function(){
-                if(timer) {
-                     clearTimeout(timer);
-                }
-                timer = setTimeout(save_note, timeout);
-            });
-            ed_details.off('paste');
-            ed_details.on('paste', (event) => {
-                event.preventDefault();
-                handle_ed_paste(event);
-            });
+            $('#btn_save_note').text("Snapshot").removeClass('btn-success btn-danger btn-warning').addClass('btn-light');
+            note_dirty = false;
 
             setSharedLink(id);
 
@@ -466,6 +714,10 @@ async function note_detail(id) {
 }
 
 function refresh_ppl_list() {
+    if (is_note_collab_active()) {
+        $('#ppl_list_viewing').empty();
+        return;
+    }
     $('#ppl_list_viewing').empty();
     for (let [key, value] of ppl_viewing) {
         $('#ppl_list_viewing').append(get_avatar_initials(key, false, undefined, true));
@@ -501,15 +753,37 @@ function search_notes() {
     })
 }
 
-function toggle_max_editor() {
-    $('#ctrd_notesum').toggle();
-    if ($('#ctrd_notesum').is(':visible')) {
-        $('#btn_max_editor').html('<i class="fa-solid fa-maximize"></i>');
-        $('#container_note_content').removeClass('col-md-12 col-lg-12').addClass('col-md-12 col-lg-6');
-    } else {
-        $('#btn_max_editor').html('<i class="fa-solid fa-minimize"></i>');
-        $('#container_note_content').removeClass('col-md-12 col-lg-6').addClass('col-md-12 col-lg-12');
+/* Returns the current note markdown from the split editor. */
+function get_active_note_markdown() {
+    return note_split ? note_split.getMarkdown() : '';
+}
+
+/* Mark the note as having unsaved changes and schedule an autosave. */
+function mark_note_dirty(markdown) {
+    if (is_note_collab_active()) {
+        mark_note_collab_dirty(markdown);
+        return;
     }
+
+    note_dirty = true;
+    $("#content_typing").text("You are typing..");
+    $('#btn_save_note').text("Save").removeClass('btn-success').addClass('btn-warning').removeClass('btn-danger');
+    if (timer) { clearTimeout(timer); }
+    timer = setTimeout(save_note, timeout);
+}
+
+/* Persist a note's markdown without mutating the current UI (used to flush GUI edits when
+   navigating away from a note; avoids stale "Saved" indicators landing on the next note). */
+function silent_save_note(noteId, md) {
+    if (!noteId) { return; }
+    let ret = get_custom_attributes_fields();
+    if (ret[0].length > 0) { return; }   // attribute validation errors: skip flush
+    let data_sent = Object();
+    data_sent['note_title'] = $('#currentNoteTitle').text() ? $('#currentNoteTitle').text() : $('#currentNoteTitleInput').val();
+    data_sent['csrf_token'] = $('#csrf_token').val();
+    data_sent['note_content'] = md !== undefined ? md : get_active_note_markdown();
+    data_sent['custom_attributes'] = ret[1];
+    post_request_api('/case/notes/update/' + noteId, JSON.stringify(data_sent), false, undefined, cid);
 }
 
 /* Save a note into db */
@@ -517,12 +791,32 @@ function save_note() {
     clear_api_error();
     let n_id = $('#currentNoteIDLabel').data('note_id')
 
+    if (!n_id) { return false; }
+
+    if (is_note_collab_active()) {
+        if (note_collab_persist_timer) {
+            clearTimeout(note_collab_persist_timer);
+            note_collab_persist_timer = null;
+        }
+        const md = get_active_note_markdown();
+        $('#btn_save_note').text("Snapshotting").removeClass('btn-success btn-danger').addClass('btn-warning');
+        note_collab_persist_and_snapshot(n_id, md, { forceSnapshot: true })
+            .then((result) => {
+                notify_success(result.revision_created
+                    ? 'Note snapshot created.'
+                    : 'Note already matches latest snapshot.');
+            })
+            .catch(() => {
+                $('#btn_save_note').text("Snapshot error").removeClass('btn-success btn-warning').addClass('btn-danger');
+            });
+        return false;
+    }
 
     let data_sent = Object();
     let currentNoteTitle = $('#currentNoteTitle').text() ? $('#currentNoteTitle').text() : $('#currentNoteTitleInput').val();
     data_sent['note_title'] = currentNoteTitle;
     data_sent['csrf_token'] = $('#csrf_token').val();
-    data_sent['note_content'] = note_editor ? note_editor.getValue() : "not found";
+    data_sent['note_content'] = get_active_note_markdown();
     let ret = get_custom_attributes_fields();
     let has_error = ret[0].length > 0;
     let attributes = ret[1];
@@ -533,19 +827,22 @@ function save_note() {
 
     post_request_api('/case/notes/update/'+ n_id, JSON.stringify(data_sent), false, undefined, cid, function() {
         $('#btn_save_note').text("Error saving!").removeClass('btn-success').addClass('btn-danger').removeClass('btn-danger');
-        $('#last_saved > i').attr('class', "fa-solid fa-file-circle-xmark");
-        $('#last_saved').addClass('btn-danger').removeClass('btn-success');
     })
     .done((data) => {
         if (api_request_failed(data)) {
             return;
         }
+        if (timer) {
+            clearTimeout(timer);
+            timer = null;
+        }
+        note_dirty = false;
         $('#btn_save_note').text("Saved").addClass('btn-success').removeClass('btn-danger').removeClass('btn-warning');
-        $('#last_saved').removeClass('btn-danger').addClass('btn-success');
         $("#content_last_saved_by").text('Last saved by you');
-        $('#last_saved > i').attr('class', "fa-solid fa-file-circle-check");
 
-        collaborator.save(n_id);
+        if (collaborator) {
+            collaborator.save(n_id);
+        }
 
         if (previousNoteTitle !== currentNoteTitle) {
             load_directories().then(function() {
@@ -555,18 +852,6 @@ function save_note() {
             previousNoteTitle = currentNoteTitle;
         }
     });
-}
-
-/* Span for note edition */
-function edit_innote() {
-    $('#container_note_content').toggle();
-    if ($('#container_note_content').is(':visible')) {
-        $('#notes_edition_btn').show(100);
-        $('#ctrd_notesum').removeClass('col-md-11 col-lg-11 ml-4').addClass('col-md-6 col-lg-6');
-    } else {
-        $('#notes_edition_btn').hide(100);
-        $('#ctrd_notesum').removeClass('col-md-6 col-lg-6').addClass('col-md-11 col-lg-11 ml-4');
-    }
 }
 
 async function load_directories() {
@@ -602,8 +887,8 @@ async function load_directories() {
 }
 
 function download_note() {
-    // Use directly the content of the note editor
-    let content = note_editor.getValue();
+    // Use the content of whichever editor is currently active (ACE or Milkdown)
+    let content = get_active_note_markdown();
     let filename = $('#currentNoteTitle').text() + '.md';
     let blob = new Blob([content], {type: 'text/plain'});
     let url = window.URL.createObjectURL(blob);
@@ -1057,48 +1342,10 @@ function createDirectoryListItem(directory, directoryMap) {
 }
 
 
-function handle_ed_paste(event) {
-    let filename = null;
-    const { items } = event.originalEvent.clipboardData;
-    for (let i = 0; i < items.length; i += 1) {
-      const item = items[i];
-
-      if (item.kind === 'string') {
-        item.getAsString(function (s){
-            filename = $.trim(s.replace(/\t|\n|\r/g, '')).substring(0, 40);
-        });
-      }
-
-      if (item.kind === 'file') {
-        const blob = item.getAsFile();
-
-        if (blob !== null) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                notify_success('The file is uploading in background. Don\'t leave the page');
-
-                if (filename === null) {
-                    let ext = get_extension_from_mime(blob.type);
-                    filename = random_filename(25) + '.' + ext;
-                }
-
-                upload_interactive_data(e.target.result, filename, function(data){
-                    url = data.data.file_url + case_param();
-                    event.preventDefault();
-                    note_editor.insertSnippet(`\n![${filename}](${url} =100%x40%)\n`);
-                });
-
-            };
-            reader.readAsDataURL(blob);
-        } else {
-            notify_error('Unsupported direct paste of this item. Use datastore to upload.');
-        }
-      }
-    }
-}
-
-
 function note_interval_pinger() {
+    if (is_note_collab_active()) {
+        return;
+    }
     if (new Date() - last_ping > 2000) {
         collaborator_socket.emit('ping-note',
             { 'channel': 'case-' + get_caseid() + '-notes', 'note_id': note_id });
@@ -1127,6 +1374,9 @@ $(document).ready(function(){
     collaborator_socket.emit('join-notes-overview', { 'channel': 'case-' + cid + '-notes' });
 
     collaborator_socket.on('ping-note', function(data) {
+        if (is_note_collab_active()) {
+            return;
+        }
         last_ping = new Date();
 
         // Set as int to avoid type mismatch
@@ -1148,9 +1398,34 @@ $(document).ready(function(){
         note_interval_pinger();
     }, 2000);
 
-    collaborator_socket.emit('ping-note', { 'channel': 'case-' + cid + '-notes', 'note_id': note_id });
+    if (!is_note_collab_active()) {
+        collaborator_socket.emit('ping-note', { 'channel': 'case-' + cid + '-notes', 'note_id': note_id });
+    }
 
     setInterval(auto_remove_typing, 1500);
+
+    const flush_active_note_before_leave = function() {
+        const noteId = $('#currentNoteIDLabel').data('note_id');
+        if (is_note_collab_active()) {
+            flush_note_collab_leave_sync(noteId);
+            return;
+        }
+        if (!noteId || !note_dirty) {
+            return;
+        }
+        const ret = get_custom_attributes_fields();
+        if (ret[0].length > 0) {
+            return;
+        }
+        note_sync_post(noteId, {
+            note_title: $('#currentNoteTitle').text() ? $('#currentNoteTitle').text() : $('#currentNoteTitleInput').val(),
+            csrf_token: $('#csrf_token').val(),
+            note_content: get_active_note_markdown(),
+            custom_attributes: ret[1],
+        });
+    };
+    window.addEventListener('pagehide', flush_active_note_before_leave);
+    window.addEventListener('beforeunload', flush_active_note_before_leave);
 
     $(document).on('click', '#currentNoteTitle', function() {
         let title = $(this).text();

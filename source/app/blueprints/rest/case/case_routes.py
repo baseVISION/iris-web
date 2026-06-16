@@ -94,6 +94,40 @@ def desc_fetch(caseid):
     return response_success('Summary updated', data=crc)
 
 
+@case_rest_blueprint.route('/case/summary/collab/persist', methods=['POST'])
+@ac_requires_case_identifier(CaseAccessLevel.full_access)
+@ac_api_requires()
+def summary_collab_persist(caseid):
+    try:
+        js_data = request.get_json(silent=True) or {}
+        if not isinstance(js_data.get('case_description'), str):
+            return response_error('Data error', data={'case_description': ['Missing case description']})
+
+        case = get_case(caseid)
+        if not case:
+            return response_error('Invalid case ID')
+
+        case.description = js_data.get('case_description')
+        crc = binascii.crc32(case.description.encode('utf-8'))
+        db.session.commit()
+        track_activity('persisted summary collaboration', caseid)
+
+        socket_io.emit('save', {
+            'case_description': case.description,
+            'last_saved': iris_current_user.user
+        }, to=f'case-{caseid}')
+
+        return response_success('ok', data={
+            'persisted': True,
+            'crc32': crc,
+            'client_hash': js_data.get('client_hash')
+        })
+
+    except Exception:
+        log.exception('Unable to persist collab summary for case %s', caseid)
+        return response_error('Unable to persist summary')
+
+
 @case_rest_blueprint.route('/case/summary/fetch', methods=['GET'])
 @ac_requires_case_identifier(CaseAccessLevel.read_only, CaseAccessLevel.full_access)
 @ac_api_requires()

@@ -137,6 +137,12 @@ def update_note(note_content, note_title, update_date, user_id, note_id, caseid)
 
 def update_note_revision(user_identifier, note: Notes) -> bool:
     try:
+        db.session.query(
+            Notes.note_id
+        ).filter(
+            Notes.note_id == note.note_id
+        ).with_for_update().first()
+
         latest_version = db.session.query(
             NoteRevisions
         ).filter_by(

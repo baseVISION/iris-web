@@ -24,7 +24,6 @@ from datetime import datetime
 
 from app.models.errors import BusinessProcessingError
 from app.blueprints.iris_user import iris_current_user
-from docx_generator.docx_generator import DocxGenerator
 from docx_generator.exceptions import rendering_error
 
 from app import app
@@ -37,6 +36,8 @@ from app.iris_engine.utils.tracker import track_activity
 from app.models.models import CaseTemplateReport
 
 from app.business.reports.ImageHandler import ImageHandler
+from app.business.reports.docx_report_generator import IrisDocxGenerator
+from app.business.reports.docx_report_generator import validate_docx_text_leaf_nodes
 from app.iris_engine.utils.common import IrisJinjaEnv
 
 LOG_FORMAT = '%(asctime)s :: %(levelname)s :: %(module)s :: %(funcName)s :: %(message)s'
@@ -47,8 +48,8 @@ def _get_docid():
     return '{}'.format(datetime.utcnow().strftime('%y%m%d_%H%M'))
 
 
-def _get_case_info(case_identifier):
-    case_info = cases_export_to_json(case_identifier)
+def _get_case_info(case_identifier, for_docx=False):
+    case_info = cases_export_to_json(case_identifier, for_docx=for_docx)
 
     # Get customer, user and case title
     case_info['doc_id'] = _get_docid()
@@ -62,10 +63,10 @@ def _get_case_info(case_identifier):
     return case_info
 
 
-def _get_activity_info(case_identifier):
+def _get_activity_info(case_identifier, for_docx=False):
     auto_activities = get_auto_activities(case_identifier)
     manual_activities = get_manual_activities(case_identifier)
-    case_info_in = _get_case_info(case_identifier)
+    case_info_in = _get_case_info(case_identifier, for_docx=for_docx)
 
     doc_id = _get_docid()
 
@@ -85,19 +86,22 @@ def _get_activity_info(case_identifier):
     return case_info
 
 
-def _get_case_info_according_to_type(case_identifier, doc_type):
+def _get_case_info_according_to_type(case_identifier, doc_type, for_docx=False):
     """Returns case information
 
     Args:
         doc_type (_type_): Investigation or Activities report
+        for_docx (bool): prepare datastore image links for the DOCX generator (size-aware).
 
     Returns:
         _type_: case info
     """
     if doc_type == 'Investigation':
-        return _get_case_info(case_identifier)
+        return _get_case_info(case_identifier, for_docx=for_docx)
     if doc_type == 'Activities':
-        return _get_activity_info(case_identifier)
+        # Activity reports only use case name/dates/customer — never the note/description
+        # markdown — so skip the (potentially heavy) DOCX image preprocessing.
+        return _get_activity_info(case_identifier, for_docx=False)
 
     return None
 
@@ -114,7 +118,7 @@ class IrisMakeDocReport:
         self._safe_mode = safe_mode
 
     def generate_doc_report(self, doc_type):
-        case_info = _get_case_info_according_to_type(self._caseid, doc_type)
+        case_info = _get_case_info_according_to_type(self._caseid, doc_type, for_docx=True)
         if case_info is None:
             log.error('Unknown report type')
             track_activity('failed to generate report')
@@ -136,12 +140,13 @@ class IrisMakeDocReport:
             else:
                 image_handler = None
 
-            generator = DocxGenerator(image_handler=image_handler)
+            generator = IrisDocxGenerator(image_handler=image_handler)
             generator.generate_docx("/",
                                     os.path.join(app.config['TEMPLATES_PATH'], report.internal_reference),
                                     case_info,
                                     output_file_path
                                     )
+            validate_docx_text_leaf_nodes(output_file_path)
 
             return output_file_path
 

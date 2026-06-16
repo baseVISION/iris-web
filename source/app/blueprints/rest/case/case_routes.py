@@ -123,9 +123,9 @@ def summary_collab_persist(caseid):
             'client_hash': js_data.get('client_hash')
         })
 
-    except Exception as e:
+    except Exception:
         log.exception('Unable to persist collab summary for case %s', caseid)
-        return response_error('Unable to persist summary', data=str(e))
+        return response_error('Unable to persist summary')
 
 
 @case_rest_blueprint.route('/case/summary/fetch', methods=['GET'])

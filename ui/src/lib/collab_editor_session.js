@@ -48,11 +48,20 @@ export function getCollabUser() {
 }
 
 export function syncPostJson(url, payload, caseId) {
+    const fullUrl = `${url}?cid=${encodeURIComponent(caseId)}`;
+    const json = JSON.stringify(payload);
+    // sendBeacon works during page unload; synchronous XHR is silently dropped by modern browsers
+    if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+        const blob = new Blob([json], { type: 'application/json;charset=UTF-8' });
+        if (navigator.sendBeacon(fullUrl, blob)) {
+            return true;
+        }
+    }
     try {
         const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${url}?cid=${encodeURIComponent(caseId)}`, false);
+        xhr.open('POST', fullUrl, false);
         xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
-        xhr.send(JSON.stringify(payload));
+        xhr.send(json);
         return xhr.status >= 200 && xhr.status < 300;
     } catch (e) {
         return false;

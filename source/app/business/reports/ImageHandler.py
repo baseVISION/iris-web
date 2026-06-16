@@ -90,10 +90,7 @@ class ImageHandler(PictureGlobals):
             # that the browser saves as a corrupt .docx. Other exceptions (e.g. a filesystem
             # error creating the temp image directory) are real bugs and should surface.
             self._logger.error('Skipping image in report (%s): %s', image_path, e)
-            try:
-                return self._template.new_subdoc()
-            except Exception:
-                return None
+            return self._template.new_subdoc()
         finally:
             self._target_width_pct = None
 

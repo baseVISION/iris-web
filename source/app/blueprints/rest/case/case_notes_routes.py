@@ -174,6 +174,9 @@ def case_note_collab_persist(cur_id, caseid):
             'client_hash': request_data.get('client_hash')
         })
 
+    except BusinessProcessingError as e:
+        return response_error(e.get_message(), data=e.get_data())
+
     except Exception:
         app.logger.exception('Unable to persist collab note %s', cur_id)
         return response_error('Unable to persist note')

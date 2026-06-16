@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import re
-from asyncio import Task, create_task
+from asyncio import Task, create_task, to_thread
 from collections.abc import Awaitable, Callable
 from http.cookies import CookieError, SimpleCookie
 from pathlib import Path
@@ -119,9 +119,8 @@ class IrisCollabASGIApp:
         if msg["type"] != "websocket.connect":
             return
 
-        auth = authorize_scope(scope)
+        auth = await to_thread(authorize_scope, scope)
         if auth is None:
-            await send({"type": "websocket.accept"})
             await send({"type": "websocket.close", "code": 1008})
             return
 

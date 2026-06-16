@@ -453,7 +453,7 @@ def export_case_tasks_json(case_id):
     return task_with_assignees
 
 
-def export_case_assets_json(case_id):
+def export_case_assets_json(case_id, for_docx=False):
     ret = []
 
     res = CaseAssets.query.with_entities(
@@ -480,6 +480,9 @@ def export_case_assets_json(case_id):
 
     for row in res:
         row = row._asdict()
+        row['asset_description'] = process_md_images_links_for_report(
+            row['asset_description'] or '', for_docx=for_docx
+        )
         row['light_asset_description'] = row['asset_description']
 
         ial = IocAssetLink.query.with_entities(

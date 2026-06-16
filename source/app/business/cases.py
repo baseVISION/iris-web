@@ -253,7 +253,7 @@ def cases_export_to_json(case_id, for_docx=False):
     export['evidences'] = export_case_evidences_json(case_id)
     export['timeline'] = export_case_tm_json(case_id)
     export['iocs'] = iocs_exports_to_json(case_id)
-    export['assets'] = export_case_assets_json(case_id)
+    export['assets'] = export_case_assets_json(case_id, for_docx=for_docx)
     export['tasks'] = export_case_tasks_json(case_id)
     export['comments'] = export_case_comments_json(case_id)
     export['notes'] = export_case_notes_json(case_id, for_docx=for_docx)

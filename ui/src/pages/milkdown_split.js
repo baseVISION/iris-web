@@ -445,10 +445,14 @@ class SplitEditor {
             return;
         }
 
-        this.pendingCollabState = next;
-        if (this.collabStateTimer) {
+        if (this.collabStateTimer && this.pendingCollabState === next) {
             return;
         }
+        if (this.collabStateTimer) {
+            clearTimeout(this.collabStateTimer);
+            this.collabStateTimer = null;
+        }
+        this.pendingCollabState = next;
         this.collabStateTimer = setTimeout(() => {
             this.collabStateTimer = null;
             const pending = this.pendingCollabState;

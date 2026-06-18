@@ -782,7 +782,21 @@ window.IrisMilkdown = {
 
             const ydoc = new Y.Doc();
             const provider = new WebsocketProvider(getCollabServerUrl(collabConfig), room, ydoc);
-            const user = normalizeCollabUser(collabConfig.user);
+
+            // Fetch server-verified identity so awareness cannot be spoofed by
+            // a crafted WebSocket client claiming a different user's name.
+            let serverUser = null;
+            try {
+                const meResp = await fetch('/collab/me', { credentials: 'include' });
+                if (meResp.ok) {
+                    const meData = await meResp.json();
+                    if (meData.name) {
+                        serverUser = { name: meData.name };
+                    }
+                }
+            } catch (_) { /* fall through to client-side identity */ }
+
+            const user = normalizeCollabUser(serverUser || collabConfig.user);
             provider.awareness.setLocalStateField('user', user);
 
             let service = null;

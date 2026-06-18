@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from asyncio import Task, create_task, to_thread
@@ -51,6 +52,7 @@ class AuthorizedRoom(NamedTuple):
     user_id: int
     note_id: int | None
     case_id: int
+    user_name: str
 
 
 class IrisSQLiteYStore(SQLiteYStore):
@@ -154,19 +156,26 @@ class IrisCollabASGIApp:
         receive: Callable[[], Awaitable[dict[str, Any]]],
         send: Callable[[dict[str, Any]], Awaitable[None]],
     ) -> None:
-        if scope.get("method") == "GET" and scope.get("path") in {"/healthz", "/collab/healthz"}:
+        method_is_get = scope.get("method") == "GET"
+        path = scope.get("path")
+        if method_is_get and path in {"/healthz", "/collab/healthz"}:
             body = b"ok\n"
             status = 200
+            content_type = b"text/plain; charset=utf-8"
+        elif method_is_get and path == "/collab/me":
+            body, status = await to_thread(_resolve_me, scope)
+            content_type = b"application/json"
         else:
             body = b"not found\n"
             status = 404
+            content_type = b"text/plain; charset=utf-8"
 
         await send(
             {
                 "type": "http.response.start",
                 "status": status,
                 "headers": [
-                    (b"content-type", b"text/plain; charset=utf-8"),
+                    (b"content-type", content_type),
                     (b"content-length", str(len(body)).encode()),
                 ],
             }
@@ -175,6 +184,11 @@ class IrisCollabASGIApp:
 
 
 def authorize_scope(scope: dict[str, Any]) -> AuthorizedRoom | None:
+    if not _check_origin(scope):
+        origin = _get_header(scope, b"origin")
+        flask_app.logger.warning("Rejected collab websocket: cross-origin request from %s", origin)
+        return None
+
     path = scope.get("path") or ""
     match = COLLAB_PATH_RE.match(path)
     if not match:
@@ -205,7 +219,7 @@ def authorize_scope(scope: dict[str, Any]) -> AuthorizedRoom | None:
         return None
 
     with flask_app.app_context():
-        user = User.query.filter(User.id == user_id, User.active == True).first()
+        user = User.query.with_entities(User.name).filter(User.id == user_id, User.active == True).first()
         if user is None:
             flask_app.logger.warning(
                 "Rejected collab websocket for %s: inactive or unknown user %s",
@@ -213,6 +227,7 @@ def authorize_scope(scope: dict[str, Any]) -> AuthorizedRoom | None:
                 user_id,
             )
             return None
+        user_name = user.name or ""
 
         if note_id is not None:
             note = Notes.query.with_entities(Notes.note_case_id).filter(
@@ -253,7 +268,7 @@ def authorize_scope(scope: dict[str, Any]) -> AuthorizedRoom | None:
             )
             return None
 
-    return AuthorizedRoom(room_name=room_name, user_id=user_id, note_id=note_id, case_id=case_id)
+    return AuthorizedRoom(room_name=room_name, user_id=user_id, note_id=note_id, case_id=case_id, user_name=user_name)
 
 
 def _decode_session_cookie(scope: dict[str, Any]) -> dict[str, Any] | None:
@@ -289,6 +304,45 @@ def _get_header(scope: dict[str, Any], header_name: bytes) -> bytes | None:
         if name.lower() == header_name:
             return value
     return None
+
+
+def _check_origin(scope: dict[str, Any]) -> bool:
+    """Reject cross-origin WebSocket upgrades to prevent CSWSH.
+
+    Compares the Origin header host against the Host header.  Direct API
+    clients (curl, native apps) do not send an Origin header and are allowed
+    through.
+    """
+    origin = _get_header(scope, b"origin")
+    if not origin:
+        return True
+    host = _get_header(scope, b"host")
+    if not host:
+        return False
+    origin_str = origin.decode("latin1").rstrip("/")
+    for scheme in ("https://", "http://", "wss://", "ws://"):
+        if origin_str.startswith(scheme):
+            origin_str = origin_str[len(scheme):]
+            break
+    return origin_str == host.decode("latin1")
+
+
+def _resolve_me(scope: dict[str, Any]) -> tuple[bytes, int]:
+    """Return the server-verified display name for the authenticated session."""
+    session_data = _decode_session_cookie(scope)
+    if not session_data:
+        return json.dumps({"error": "unauthorized"}).encode(), 401
+    try:
+        user_id = int(session_data.get("_user_id") or 0)
+    except (TypeError, ValueError):
+        user_id = 0
+    if not user_id:
+        return json.dumps({"error": "unauthorized"}).encode(), 401
+    with flask_app.app_context():
+        user = User.query.filter(User.id == user_id, User.active == True).first()
+        if user is None:
+            return json.dumps({"error": "unauthorized"}).encode(), 401
+        return json.dumps({"name": user.name, "login": user.user}).encode(), 200
 
 
 websocket_server = IrisCollabWebsocketServer(exception_handler=exception_logger)

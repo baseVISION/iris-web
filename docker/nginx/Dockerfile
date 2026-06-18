@@ -44,4 +44,6 @@ RUN mkdir -p /www/certs/
 
 HEALTHCHECK --interval=5s --timeout=3s CMD curl --fail -k https://127.0.0.1:${INTERFACE_HTTPS_PORT:-443} || exit 1
 
+USER www-data
+
 ENTRYPOINT ["/entrypoint.sh"]

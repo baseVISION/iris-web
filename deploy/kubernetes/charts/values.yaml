@@ -218,6 +218,76 @@ irisworker:
   ##
   podSecurityContext: {}
 
+## @section Iris Collab Server Configuration
+##
+iriscollab:
+  ## @param iriscollab.enabled Enable the collab websocket server deployment
+  ##
+  enabled: true
+  ## @param iriscollab.replicaCount Number of collab server replicas (RWO PVC limits this to 1 per node)
+  ##
+  replicaCount: 1
+  ## @param iriscollab.app Collab server app label
+  ##
+  app: iriswebapp-collab
+  ## @param iriscollab.name Collab server name
+  ##
+  name: iriswebapp-collab
+  ## @param iriscollab.image Collab server image (same image as irisapp)
+  ##
+  image: <irisapp_image>
+  ## @param iriscollab.tag Collab server image tag
+  ##
+  tag: <tag>
+  ## @param iriscollab.imagePullPolicy Collab server imagePullPolicy
+  ##
+  imagePullPolicy: "IfNotPresent"
+  ## @param iriscollab.pvcSize Size of the PersistentVolumeClaim for the SQLite Yjs store
+  ##
+  pvcSize: 1Gi
+  ## @param iriscollab.resources Resources for iriscollab
+  ##
+  resources: {}
+  ## @param iriscollab.securityContext securityContext for iriscollab
+  ##
+  securityContext: {}
+  ## @param iriscollab.podSecurityContext podSecurityContext for iriscollab
+  ##
+  podSecurityContext: {}
+
+  ## @param iriscollab.env Collab server environment variables (must match irisapp)
+  ##
+  POSTGRES_USER: raptor
+  POSTGRES_PASSWORD: postgres
+  POSTGRES_ADMIN_USER: raptor
+  POSTGRES_ADMIN_PASSWORD: postgres
+  POSTGRES_PORT: 5432
+  POSTGRES_SERVER: postgres.<name_space>.svc.cluster.local
+  IRIS_SECRET_KEY: AVerySuperSecretKey-SoNotThisOne
+  IRIS_SECURITY_PASSWORD_SALT: ARandomSalt-NotThisOneEither
+
+  ## @param iriscollab.envFromSecret Environment variables from a secret (must match irisapp secret)
+  ##
+  envFromSecret:
+    name: postgres-secret
+    keys:
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_ADMIN_USER
+      - POSTGRES_ADMIN_PASSWORD
+      - POSTGRES_PORT
+      - POSTGRES_SERVER
+      - IRIS_SECRET_KEY
+      - IRIS_SECURITY_PASSWORD_SALT
+
+  ## @param iriscollab.ingress Collab ingress configuration
+  ##
+  ingress:
+    ## @param iriscollab.ingress.enabled Create a dedicated Ingress for /collab with websocket timeout annotations
+    ##
+    enabled: true
+    customAnnotations: {}
+
 ## @section Nginx Ingress Configuration
 ##
 ingress:
@@ -242,6 +312,6 @@ ingress:
           serviceName: iriswebapp-app
           servicePort: 8000
   tls:
-    - secretName: <secret_name>
-      hosts:
-        - <host_name>
+    secretName: <secret_name>
+    hosts:
+      - <host_name>

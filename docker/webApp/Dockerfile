@@ -72,6 +72,7 @@ RUN mkdir -p /home/iris/server_data/backup
 RUN mkdir -p /home/iris/server_data/updates
 RUN mkdir -p /home/iris/server_data/custom_assets
 RUN mkdir -p /home/iris/server_data/datastore
+RUN mkdir -p /home/iris/server_data/collab
 
 WORKDIR /iriswebapp
 

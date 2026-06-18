@@ -17,12 +17,22 @@ spec:
   routes:
   {{- range $host := .Values.ingress.hosts }}
     {{- range $path := $host.paths }}
+    {{- $svcName := $.Values.irisapp.name }}
+    {{- $svcPort := $.Values.irisapp.service.port }}
+    {{- if hasKey $path "serviceName" }}
+      {{- $svcName = $path.serviceName }}
+      {{- if hasKey $path "servicePort" }}
+        {{- $svcPort = $path.servicePort }}
+      {{- end }}
+    {{- else if hasKey $path "servicePort" }}
+      {{- $svcPort = $path.servicePort }}
+    {{- end }}
     - kind: Rule
       match: >
         Host(`{{ $host.host }}`) && PathPrefix(`{{ $path.path }}`)
       services:
-        - name: {{ $.Values.irisapp.name }}
-          port: {{ $.Values.irisapp.service.port }}
+        - name: {{ $svcName }}
+          port: {{ $svcPort }}
     {{- end }}
   {{- end }}
 {{- end }}

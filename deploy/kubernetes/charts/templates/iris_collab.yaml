@@ -1,0 +1,153 @@
+{{- if .Values.iriscollab.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.iriscollab.name }}-pvc
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.iriscollab.pvcSize }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.iriscollab.name }}
+spec:
+  replicas: {{ .Values.iriscollab.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.iriscollab.app }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.iriscollab.app }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.iriscollab.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Values.iriscollab.name }}
+          securityContext:
+            {{- toYaml .Values.iriscollab.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.iriscollab.resources | nindent 12 }}
+          image: "{{ .Values.iriscollab.image }}:{{ .Values.iriscollab.tag }}"
+          imagePullPolicy: "{{ .Values.iriscollab.imagePullPolicy }}"
+          command: ['uvicorn', 'app.collab_server:app', '--host', '0.0.0.0', '--port', '5001']
+
+          env:
+          {{- range $key := list "POSTGRES_USER" "POSTGRES_PASSWORD" "POSTGRES_ADMIN_USER" "POSTGRES_ADMIN_PASSWORD" "POSTGRES_PORT" "POSTGRES_SERVER" "IRIS_SECRET_KEY" "IRIS_SECURITY_PASSWORD_SALT" }}
+          - name: {{ $key }}
+            {{- if and (hasKey $.Values.iriscollab "envFromSecret") (has $key $.Values.iriscollab.envFromSecret.keys) }}
+            valueFrom:
+              secretKeyRef:
+                name: {{ $.Values.iriscollab.envFromSecret.name }}
+                key: {{ $key }}
+            {{- else }}
+            value: {{ index $.Values.iriscollab $key | quote }}
+            {{- end }}
+          {{- end }}
+
+          - name: IRIS_COLLAB_STORE_PATH
+            value: /home/iris/server_data/collab
+
+          ports:
+            - containerPort: 5001
+
+          readinessProbe:
+            httpGet:
+              path: /collab/healthz
+              port: 5001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /collab/healthz
+              port: 5001
+            initialDelaySeconds: 15
+            periodSeconds: 30
+
+          volumeMounts:
+            - mountPath: /home/iris/server_data/collab
+              name: collab-data
+
+      volumes:
+        - name: collab-data
+          persistentVolumeClaim:
+            claimName: {{ .Values.iriscollab.name }}-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.iriscollab.name }}
+  labels:
+    app: {{ .Values.iriscollab.app }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5001
+      targetPort: 5001
+  selector:
+    app: {{ .Values.iriscollab.app }}
+{{- if .Values.iriscollab.ingress.enabled }}
+{{- if .Values.ingress.traefik.enabled }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ .Values.iriscollab.name }}-ingress-route
+spec:
+  entryPoints:
+    - {{ .Values.ingress.traefik.entryPoint | default "web" }}
+  routes:
+  {{- range $host := .Values.ingress.hosts }}
+    - kind: Rule
+      match: >
+        Host(`{{ $host.host }}`) && PathPrefix(`/collab`)
+      services:
+        - name: {{ $.Values.iriscollab.name }}
+          port: 5001
+  {{- end }}
+{{- else }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Values.iriscollab.name }}-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    {{- with .Values.iriscollab.ingress.customAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    {{- range $host := .Values.ingress.hosts }}
+    - host: {{ $host.host }}
+      http:
+        paths:
+          - path: /collab
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Values.iriscollab.name }}
+                port:
+                  number: 5001
+    {{- end }}
+  {{- if and .Values.ingress.enableTls (gt (len .Values.ingress.tls.hosts) 0) }}
+  tls:
+    - hosts:
+      {{- range .Values.ingress.tls.hosts }}
+      - {{ . }}
+      {{- end }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

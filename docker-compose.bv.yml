@@ -21,6 +21,7 @@ services:
       file: docker-compose.base.yml
       service: rabbitmq
     container_name: bv-iriswebapp-rabbitmq
+    restart: unless-stopped
     user: rabbitmq
     healthcheck:
       test: rabbitmq-diagnostics check_port_connectivity || exit 1
@@ -35,6 +36,7 @@ services:
     build:
       context: docker/db
     image: bv-iriswebapp-db:develop
+    restart: unless-stopped
     ports:
       - "127.0.0.1:5433:5432"
     healthcheck:
@@ -51,6 +53,7 @@ services:
       context: .
       dockerfile: docker/webApp/Dockerfile
     image: bv-iriswebapp-app:develop
+    restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -75,6 +78,7 @@ services:
       context: .
       dockerfile: docker/webApp/Dockerfile
     image: bv-iriswebapp-app:develop
+    restart: unless-stopped
     volumes:
       - ./source/app:/iriswebapp/app:z
     depends_on:
@@ -92,6 +96,7 @@ services:
   collab:
     image: bv-iriswebapp-app:develop
     container_name: bv-iriswebapp-collab
+    restart: unless-stopped
     command: ["uvicorn", "app.collab_server:app", "--host", "0.0.0.0", "--port", "5001"]
     env_file:
       - .env
@@ -138,6 +143,7 @@ services:
         NGINX_CONF_GID: 1234
         NGINX_CONF_FILE: ${NGINX_CONF_FILE:-nginx.conf}
     image: bv-iriswebapp-nginx:develop
+    restart: unless-stopped
     security_opt:
       - "label=disable"
     volumes:

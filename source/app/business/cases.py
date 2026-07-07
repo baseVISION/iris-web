@@ -64,7 +64,8 @@ def cases_filter(current_user, pagination_parameters, name=None, case_identifier
                  description=None, classification_identifier=None, owner_identifier=None, opening_user_identifier=None,
                  severity_identifier=None, status_identifier=None, soc_identifier=None,
                  start_open_date=None, end_open_date=None, is_open=None, search_value='',
-                 advanced_filters=None, advanced_logic='and'):
+                 advanced_filters=None, advanced_logic='and', quick_search=None,
+                 start_close_date=None, end_close_date=None):
     return get_filtered_cases(
             current_user.id,
             pagination_parameters,
@@ -83,7 +84,10 @@ def cases_filter(current_user, pagination_parameters, name=None, case_identifier
             search_value=search_value,
             is_open=is_open,
             advanced_filters=advanced_filters,
-            advanced_logic=advanced_logic)
+            advanced_logic=advanced_logic,
+            quick_search=quick_search,
+            start_close_date=start_close_date,
+            end_close_date=end_close_date)
 
 
 def cases_filter_by_user(user, show_all: bool):
@@ -137,6 +141,13 @@ def cases_create(user, case: Cases, case_template_id) -> Cases:
             raise BusinessProcessingError(f'Unexpected error when loading template {case_template_id} to new case.')
 
     ac_set_new_case_access(user, case.case_id, case.client_id)
+
+    # Every case gets a "Main" default timeline at creation time. The
+    # SPA timeline view lets users add more timelines on demand, but
+    # this default guarantees new events land somewhere visible
+    # without any extra step from the caller.
+    from app.business.case_timelines import case_ensure_default_timeline
+    case_ensure_default_timeline(case.case_id, created_by_id=user.id)
 
     case = call_modules_hook('on_postload_case_create', case)
 
@@ -231,6 +242,84 @@ def cases_update(case: Cases, updated_case, protagonists, tags) -> Cases:
         logger.error(e.__str__())
         logger.error(traceback.format_exc())
         raise BusinessProcessingError('Data error', str(e))
+
+
+def cases_close(case_identifier) -> Cases:
+    """Close a case and cascade the state change to its alerts.
+
+    Mirrors the legacy ``POST /manage/cases/close/<id>`` handler so the
+    v2 endpoint behaves identically: it flips the case state to
+    "Closed", closes every linked alert that isn't already closed, maps
+    the case resolution onto the alert resolution, fires the
+    ``on_postload_case_update`` module hook, and records a history /
+    activity entry.
+    """
+    case = get_case(case_identifier)
+    if not case:
+        raise ObjectNotFoundError()
+
+    res = close_case(case_identifier)
+    if not res:
+        raise ObjectNotFoundError()
+
+    if case.alerts:
+        close_status = get_alert_status_by_name('Closed')
+        case_status_id_mapped = map_alert_resolution_to_case_status(case.status_id)
+
+        for alert in case.alerts:
+            if alert.alert_status_id != close_status.status_id:
+                alert.alert_status_id = close_status.status_id
+                alert = call_modules_hook('on_postload_alert_update', alert, caseid=case_identifier)
+
+            if alert.alert_resolution_status_id != case_status_id_mapped:
+                alert.alert_resolution_status_id = case_status_id_mapped
+                alert = call_modules_hook('on_postload_alert_resolution_update', alert,
+                                          caseid=case_identifier)
+
+                track_activity(f'closing alert ID {alert.alert_id} due to case #{case_identifier} being closed',
+                               caseid=case_identifier, ctx_less=False)
+
+                db.session.add(alert)
+
+    res = call_modules_hook('on_postload_case_update', res, caseid=case_identifier)
+
+    add_obj_history_entry(res, 'case closed')
+    track_activity(f'closed case ID {case_identifier}', caseid=case_identifier, ctx_less=False)
+    return res
+
+
+def cases_reopen(case_identifier) -> Cases:
+    """Reopen a previously-closed case and cascade to its alerts.
+
+    Mirrors ``POST /manage/cases/reopen/<id>``: clears the close date,
+    flips the state back to "Open", moves every linked alert that
+    isn't already "Merged" to that state (legacy behaviour — reopening
+    a case implies its alerts are no longer terminal), and records
+    history + activity.
+    """
+    case = get_case(case_identifier)
+    if not case:
+        raise ObjectNotFoundError()
+
+    res = reopen_case(case_identifier)
+    if not res:
+        raise ObjectNotFoundError()
+
+    if case.alerts:
+        merged_status = get_alert_status_by_name('Merged')
+        for alert in case.alerts:
+            if alert.alert_status_id != merged_status.status_id:
+                alert.alert_status_id = merged_status.status_id
+                track_activity(
+                    f'alert ID {alert.alert_id} status updated to merged due to case #{case_identifier} being reopen',
+                    caseid=case_identifier, ctx_less=False)
+                db.session.add(alert)
+
+    res = call_modules_hook('on_postload_case_update', res, caseid=case_identifier)
+
+    add_obj_history_entry(res, 'case reopen')
+    track_activity(f'reopen case ID {case_identifier}', caseid=case_identifier)
+    return res
 
 
 def cases_export_to_json(case_id, for_docx=False):

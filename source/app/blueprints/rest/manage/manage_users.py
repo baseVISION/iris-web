@@ -84,6 +84,32 @@ def _filter_admin_user_payload(jsdata):
     return {k: v for k, v in jsdata.items() if k in _ADMIN_USER_WRITABLE_FIELDS}
 
 
+# Allowlist of fields an administrator may write when creating or updating a
+# user. Anything else the caller tries to sneak in (id, uuid, mfa_secrets,
+# webauthn_credentials, mfa_setup_complete, api_key, external_id, ...) is
+# silently dropped before the schema is loaded. Closes the mass-assignment
+# vector reported as GHSA-w78h-mx7h-qm3h / SBA-ADV-20260128-01 / CWE-915.
+_ADMIN_USER_WRITABLE_FIELDS = {
+    'csrf_token',
+    'user_id',
+    'user_name',
+    'user_login',
+    'user_email',
+    'user_password',
+    'user_isadmin',
+    'user_is_service_account',
+    'user_primary_organisation_id',
+    'user_roles_str',
+    'active',
+}
+
+
+def _filter_admin_user_payload(jsdata):
+    if not isinstance(jsdata, dict):
+        return {}
+    return {k: v for k, v in jsdata.items() if k in _ADMIN_USER_WRITABLE_FIELDS}
+
+
 @manage_users_rest_blueprint.route('/manage/users/list', methods=['GET'])
 @ac_api_requires(Permissions.server_administrator)
 def manage_users_list():

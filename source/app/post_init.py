@@ -53,6 +53,7 @@ from app.models.assets import AnalysisStatus
 from app.models.alerts import Severity
 from app.models.alerts import AlertStatus
 from app.models.alerts import AlertResolutionStatus
+from app.models.incidents import IncidentStatus
 from app.models.authorization import CaseAccessLevel
 from app.models.authorization import Group
 from app.models.authorization import User
@@ -716,6 +717,18 @@ def create_safe_alert_status():
     create_safe(db.session, AlertStatus, status_name='Escalated', status_description="Alert converted to a new case")
 
 
+def create_safe_incident_status():
+    """Seed the IncidentStatus lookup. Idempotent — safe to re-run at boot."""
+    create_safe(db.session, IncidentStatus, status_name='Open',
+                status_description='Incident is open and receiving alerts')
+    create_safe(db.session, IncidentStatus, status_name='Investigating',
+                status_description='Incident is being investigated by an analyst')
+    create_safe(db.session, IncidentStatus, status_name='Dismissed',
+                status_description='Incident closed with no further action')
+    create_safe(db.session, IncidentStatus, status_name='Escalated',
+                status_description='Incident escalated to a case')
+
+
 def create_safe_evidence_types():
     """Creates new Evidence Types objects if they do not already exist.
 
@@ -997,62 +1010,57 @@ def create_safe_default_organisation():
 
 
 def create_safe_group(name, description, auto_follow, auto_follow_access_level, permissions):
+    # Returns (group, created). `created=False` means the group was
+    # already in the database — callers use that signal to avoid
+    # overwriting admin-edited attributes on subsequent worker boots.
     try:
-        return groups_get_by_name(name)
+        return groups_get_by_name(name), False
     except ObjectNotFoundError:
         group = Group(group_name=name, group_description=description,
                       group_auto_follow=auto_follow, group_auto_follow_access_level=auto_follow_access_level,
                       group_permissions=permissions)
-        return groups_create(group)
+        return groups_create(group), True
 
 
-# TODO is it really necessary to do all that?
-#   shouldn't the migration upgrade step already have put the database in the expected state?
-#   and shouldn't we protect modifications on initial entries that are not supposed to be modified
-#   (maybe comparing the identifier of the objects that are to be updated with the last identifier after database
-#   initialization)
 def create_safe_auth_model():
-    """Creates new Organisation, Group, and User objects if they do not already exist.
+    """Ensure the default org + built-in Administrators/Analysts groups exist.
 
-    This function creates a new Organisation object with the specified name and description,
-    and creates new Group objects with the specified name, description, auto-follow status,
-    auto-follow access level, and permissions if they do not already exist in the database.
-    It also updates the attributes of the existing Group objects if they have changed.
-
+    Historically this function also *re-synced* the built-in groups'
+    permissions and auto-follow attributes on every boot. That silently
+    clobbered any changes an admin had made through the UI: PATCH the
+    Analysts permissions → 200 → next worker restart → post_init runs
+    → the row snaps back to `ac_get_mask_analyst()`. From now on we
+    only seed the defaults when the group is *first* created;
+    subsequent boots leave admin-edited attributes alone.
     """
     def_org = create_safe_default_organisation()
 
-    # Create new Administrator Group object
-    gadm = create_safe_group('Administrators', 'Administrators', True,
-                             CaseAccessLevel.full_access.value, ac_get_mask_full_permissions())
+    gadm, gadm_created = create_safe_group(
+        'Administrators', 'Administrators', True,
+        CaseAccessLevel.full_access.value, ac_get_mask_full_permissions())
 
-    # Update Administrator Group object attributes
-    if gadm.group_permissions != ac_get_mask_full_permissions():
+    ganalysts, ganalysts_created = create_safe_group(
+        'Analysts', 'Standard Analysts', False,
+        CaseAccessLevel.full_access.value, ac_get_mask_analyst())
+
+    # Only enforce defaults on the very first boot after the row was
+    # created. The `_created` branches are effectively no-ops in that
+    # case (the constructor already set every attribute) but we leave
+    # them explicit so a future change to the default mask still
+    # propagates onto a freshly-created group without a second
+    # migration.
+    if gadm_created:
         gadm.group_permissions = ac_get_mask_full_permissions()
-
-    if gadm.group_auto_follow_access_level != CaseAccessLevel.full_access.value:
         gadm.group_auto_follow_access_level = CaseAccessLevel.full_access.value
-
-    if gadm.group_auto_follow is not True:
         gadm.group_auto_follow = True
 
-    db.session.commit()
-
-    # Create new Analysts Group object
-    ganalysts = create_safe_group('Analysts', 'Standard Analysts', False,
-                                  CaseAccessLevel.full_access.value, ac_get_mask_analyst())
-
-    # Update Analysts Group object attributes
-    if ganalysts.group_permissions != ac_get_mask_analyst():
+    if ganalysts_created:
         ganalysts.group_permissions = ac_get_mask_analyst()
-
-    if ganalysts.group_auto_follow:
         ganalysts.group_auto_follow = False
-
-    if ganalysts.group_auto_follow_access_level != CaseAccessLevel.full_access.value:
         ganalysts.group_auto_follow_access_level = CaseAccessLevel.full_access.value
 
-    db.session.commit()
+    if gadm_created or ganalysts_created:
+        db.session.commit()
 
     return def_org, gadm, ganalysts
 
@@ -1329,6 +1337,9 @@ class PostInit:
                 self._logger.info("Creating base alert status")
                 create_safe_alert_status()
 
+                self._logger.info("Creating base incident status")
+                create_safe_incident_status()
+
                 self._logger.info("Creating base evidence types")
                 create_safe_evidence_types()
 
@@ -1344,6 +1355,32 @@ class PostInit:
 
                 self._logger.info("Creating base hooks")
                 create_safe_hooks()
+
+                # Seed the admin-default notification settings. Idempotent
+                # so operator toggles from a prior boot survive.
+                self._logger.info("Seeding notification admin defaults")
+                from app.iris_engine.notifications.service import seed_admin_defaults
+                seed_admin_defaults()
+
+                # Wire the built-in notification hook listeners.
+                # `register_notification_listeners` is idempotent — a
+                # second call is a no-op.
+                self._logger.info("Registering notification hook listeners")
+                from app.iris_engine.notifications.hook_listeners import register_notification_listeners
+                register_notification_listeners()
+
+                # Import the mail engine so its Celery tasks (outbound
+                # send + inbound poll) and the beat-schedule connect
+                # handler register. The connect handler is idempotent
+                # — if IMAP is disabled the task itself short-circuits
+                # each tick. Import for side-effects.
+                self._logger.info("Registering mail Celery tasks + beat schedule")
+                import app.iris_engine.mail  # noqa: F401  side-effects only
+
+                # Register the incident-rules evaluator so the Celery worker
+                # discovers it at boot. Import for side-effects only.
+                self._logger.info("Registering incident-rules Celery tasks")
+                import app.iris_engine.incident_rules  # noqa: F401  side-effects only
 
                 # Create initial authorization model, administrative user, and customer
                 self._logger.info("Creating initial authorisation model")

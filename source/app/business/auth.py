@@ -16,7 +16,8 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
-from urllib.parse import urlsplit
+import time
+from urllib.parse import urlparse
 
 from flask import flash
 from flask import session
@@ -93,31 +94,29 @@ def validate_local_login(username: str, password: str):
 
 
 def _is_safe_url(target):
-    """
-    Check whether the target URL is safe for redirection.
+    """Return True iff `target` is safe to use in a 302 Location header.
 
-    The previous check using urlparse(target).netloc failed to reject payloads
-    like 'attacker.com?cid=1': urlsplit treats that as a path with an empty
-    netloc, but browsers resolving a 'Location: attacker.com' header route the
-    user to the attacker's host — an Open Redirect (GHSA-vjc3-7jwv-j9qf,
-    SBA-ADV-20260126-02, CWE-601).
+    A safe target is a *relative* path on this application. The previous
+    implementation only checked `parsed.scheme` and `parsed.netloc`, which is
+    bypassed by payloads like `attacker.com?cid=1` — urlparse treats that as a
+    path with an empty netloc, but browsers resolving a `Location: attacker.com`
+    header will route the user to the attacker's host. That's GHSA-vjc3-7jwv-j9qf
+    / SBA-ADV-20260126-02 / CWE-601.
 
-    A safe redirect target is a *relative* path on this application:
-    - must be a non-empty string
-    - no control characters or backslashes (browsers may normalise '\\' -> '/')
-    - must start with '/' but not '//' (rules out protocol-relative URLs)
-    - urlsplit must confirm no scheme and no netloc (defence-in-depth)
+    The strict rules:
+      - non-empty string
+      - no control characters (incl. tab/newline) or backslashes (some browsers
+        normalise `\\` -> `/`, turning `/\\evil.com` into `//evil.com`)
+      - starts with a single `/` (not `//`, which is protocol-relative)
+      - urlparse confirms no scheme and no netloc — defense in depth
     """
     if not target or not isinstance(target, str):
         return False
-    # Reject control chars (incl. tab/newline) and backslashes outright.
     if any(ord(c) < 0x20 or c == '\\' for c in target):
         return False
-    # Must be a site-relative path: starts with '/' but not '//'.
     if not target.startswith('/') or target.startswith('//'):
         return False
-    # Defence-in-depth: urlsplit must confirm no scheme and no netloc.
-    parsed = urlsplit(target)
+    parsed = urlparse(target)
     return not parsed.scheme and not parsed.netloc
 
 
@@ -126,11 +125,9 @@ def _filter_next_url(next_url, context_case):
     Ensures that the URL to which the user is redirected is safe. If the provided URL is not safe or is missing,
     a default URL (typically the index page) is returned.
     """
-    if not next_url:
+    if not _is_safe_url(next_url):
         return url_for('index.index', cid=context_case)
-    if _is_safe_url(next_url):
-        return next_url
-    return url_for('index.index', cid=context_case)
+    return next_url
 
 
 def wrap_login_user(user, is_oidc=False):
@@ -154,6 +151,7 @@ def wrap_login_user(user, is_oidc=False):
             if locked_until and locked_until > time.time():
                 flash('Too many attempts. Please try again later.', 'danger')
                 return redirect(url_for('login.login'))
+
             # Mark this browser session as the one that just passed password
             # auth for this user. mfa_setup / mfa_verify will refuse to run
             # for any other user id, preventing cross-user MFA handler abuse.
@@ -234,14 +232,19 @@ def generate_auth_tokens(user, mfa_verified: bool = False):
         algorithm='HS256'
     )
 
-    # Generate refresh token
+    # Generate refresh token. The MFA flags travel with the refresh too so
+    # the refresh endpoint can mint new access tokens that preserve the
+    # caller's MFA state without re-prompting — and, crucially, without
+    # silently upgrading a step-1 refresh into a verified access token.
     refresh_token_payload = {
         'user_id': user.id,
         'user_name': user.name,
         'user_email': user.email,
         'user_login': user.user,
         'exp': refresh_token_expiry,
-        'type': 'refresh'
+        'type': 'refresh',
+        'mfa_required': mfa_required,
+        'mfa_verified': effective_mfa_verified,
     }
     refresh_token = jwt.encode(
         refresh_token_payload,

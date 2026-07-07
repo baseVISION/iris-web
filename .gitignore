@@ -33,3 +33,4 @@ certificates/web_certificates/*.key
 !certificates/web_certificates/iris_dev_*
 local_dev/
 .serena/
+.tokensave

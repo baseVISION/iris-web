@@ -61,18 +61,13 @@ _CODE_BLOCK_FILL = 'F6F8FA'
 _CODE_BLOCK_BORDER_COLOR = 'D0D7DE'
 _CODE_BLOCK_PBDR_XML = (
     '<w:pBdr>'
-    '<w:top w:val="single" w:sz="4" w:space="4" w:color="{}"/>'
-    '<w:left w:val="single" w:sz="4" w:space="4" w:color="{}"/>'
-    '<w:bottom w:val="single" w:sz="4" w:space="4" w:color="{}"/>'
-    '<w:right w:val="single" w:sz="4" w:space="4" w:color="{}"/>'
+    f'<w:top w:val="single" w:sz="4" w:space="4" w:color="{_CODE_BLOCK_BORDER_COLOR}"/>'
+    f'<w:left w:val="single" w:sz="4" w:space="4" w:color="{_CODE_BLOCK_BORDER_COLOR}"/>'
+    f'<w:bottom w:val="single" w:sz="4" w:space="4" w:color="{_CODE_BLOCK_BORDER_COLOR}"/>'
+    f'<w:right w:val="single" w:sz="4" w:space="4" w:color="{_CODE_BLOCK_BORDER_COLOR}"/>'
     '</w:pBdr>'
-).format(
-    _CODE_BLOCK_BORDER_COLOR,
-    _CODE_BLOCK_BORDER_COLOR,
-    _CODE_BLOCK_BORDER_COLOR,
-    _CODE_BLOCK_BORDER_COLOR,
 )
-_CODE_BLOCK_SHD_XML = '<w:shd w:val="clear" w:color="auto" w:fill="{}"/>'.format(_CODE_BLOCK_FILL)
+_CODE_BLOCK_SHD_XML = f'<w:shd w:val="clear" w:color="auto" w:fill="{_CODE_BLOCK_FILL}"/>'
 
 # Schema order of children inside <w:pPr> (CT_PPr). The code-block override inserts pBdr
 # and shd in this order so the emitted paragraph properties remain validator-friendly.
@@ -135,9 +130,9 @@ def _rpr_with_color(base_rpr, color):
     if not xml:
         xml = '<w:rPr/>'
     elif '<w:rPr' not in xml:
-        xml = '<w:rPr>{}</w:rPr>'.format(xml)
+        xml = f'<w:rPr>{xml}</w:rPr>'
 
-    wrapper = etree.fromstring('<root xmlns:w="{}">{}</root>'.format(_W_NS, xml).encode('utf-8'))
+    wrapper = etree.fromstring(f'<root xmlns:w="{_W_NS}">{xml}</root>'.encode('utf-8'))
     rpr = wrapper.find(_W + 'rPr')
     if rpr is None:
         rpr = etree.SubElement(wrapper, _W + 'rPr')
@@ -167,7 +162,7 @@ def _ppr_sort_index(element):
 
 
 def _parse_ppr_child(xml):
-    return etree.fromstring('<root xmlns:w="{}">{}</root>'.format(_W_NS, xml).encode('utf-8'))[0]
+    return etree.fromstring(f'<root xmlns:w="{_W_NS}">{xml}</root>'.encode('utf-8'))[0]
 
 
 def _insert_ppr_child(ppr, child, order_pos):
@@ -186,9 +181,9 @@ def _code_block_ppr(base_ppr):
     if not xml:
         xml = '<w:pPr/>'
     elif '<w:pPr' not in xml:
-        xml = '<w:pPr>{}</w:pPr>'.format(xml)
+        xml = f'<w:pPr>{xml}</w:pPr>'
 
-    wrapper = etree.fromstring('<root xmlns:w="{}">{}</root>'.format(_W_NS, xml).encode('utf-8'))
+    wrapper = etree.fromstring(f'<root xmlns:w="{_W_NS}">{xml}</root>'.encode('utf-8'))
     ppr = wrapper.find(_W + 'pPr')
     if ppr is None:
         ppr = etree.SubElement(wrapper, _W + 'pPr')
@@ -314,7 +309,7 @@ class MarkdownImageDocxRenderer(DocxRenderer):
         content = self.render_inner(token)
 
         col_w = max(1, _TABLE_TOTAL_WIDTH_TWIPS // ncols)
-        grid = ''.join('<w:gridCol w:w="{}"/>'.format(col_w) for _ in range(ncols))
+        grid = ''.join(f'<w:gridCol w:w="{col_w}"/>' for _ in range(ncols))
         tbl_pr = (
             '<w:tblPr>'
             '<w:tblStyle w:val="ReportMain"/>'
@@ -324,7 +319,7 @@ class MarkdownImageDocxRenderer(DocxRenderer):
             '<w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>'
             '</w:tblPr>'
         )
-        return '<w:tbl>{}<w:tblGrid>{}</w:tblGrid>{}{}</w:tbl>'.format(tbl_pr, grid, header, content)
+        return f'<w:tbl>{tbl_pr}<w:tblGrid>{grid}</w:tblGrid>{header}{content}</w:tbl>'
 
     def render_image(self, token):
         if self._image_handler is None:
@@ -347,7 +342,7 @@ class IrisDocxGenerator(DocxGenerator):
 
     def _recursive_rendering(self, base_path: str, template_path: str, data: Dict, output_path: str, render_level: int):
         render_level += 1
-        self._logger.info('Start rendering for level {}'.format(render_level))
+        self._logger.info(f'Start rendering for level {render_level}')
 
         loaded_template = MarkdownAwareDocxTemplate(template_path)
         template_styles = get_document_render_styles(template_path)
@@ -362,7 +357,7 @@ class IrisDocxGenerator(DocxGenerator):
         except RenderingError as e:
             raise e
         except Exception as e:
-            error_message = '{} ({})'.format(str(e), os.path.basename(template_path))
+            error_message = f'{str(e)} ({os.path.basename(template_path)})'
             raise RenderingError(self._logger, error_message)
 
         is_variable_found = False
@@ -382,7 +377,7 @@ class IrisDocxGenerator(DocxGenerator):
                             break
 
         loaded_template.save(output_path)
-        self._logger.info('Document generated for level {}'.format(render_level))
+        self._logger.info(f'Document generated for level {render_level}')
 
         if is_variable_found and render_level <= self._max_recursive_render_depth:
             self._logger.info('Variable found in generated document. Restarting rendering process ...')
@@ -418,7 +413,7 @@ def find_docx_text_leaf_violations(docx_path: str) -> List[str]:
             root = etree.fromstring(archive.read(part))
             for text_node in root.xpath('.//w:t', namespaces=WORD_TEXT_NS):
                 if len(text_node):
-                    violations.append('{} contains <w:t> with {} child element(s)'.format(part, len(text_node)))
+                    violations.append(f'{part} contains <w:t> with {len(text_node)} child element(s)')
 
     return violations
 

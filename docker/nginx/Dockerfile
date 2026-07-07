@@ -19,7 +19,19 @@
 
 FROM nginx:1.30
 
-RUN apt-get update && apt-get install -y curl
+# Pull in current Debian security updates (libxml2 CVE-2024-56171 /
+# CVE-2025-49794 / CVE-2025-49796 and similar). `apt-get upgrade` is safe
+# inside the image because apt retrieves from Debian's configured archive
+# mirrors and the updates are binary-compatible within the suite.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends curl libcap2-bin \
+    && rm -rf /var/lib/apt/lists/*
+
+# nginx runs as non-root www-data (see USER below), which by default
+# cannot bind to privileged ports (<1024) such as 443. Grant the one
+# capability it needs instead of running as root.
+RUN setcap 'cap_net_bind_service=+ep' /usr/sbin/nginx
 
 # Used to pass protected files to the container through volumes
 ARG NGINX_CONF_GID

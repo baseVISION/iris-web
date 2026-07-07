@@ -103,9 +103,9 @@ def _docx_rewrite_datastore_image(match):
     url = 'http://127.0.0.1:8000' + match.group('url')
     pct = _docx_width_percent(match.group('size'))
     if pct is not None:
-        url += '&iriswidth={}'.format(pct)
+        url += f'&iriswidth={pct}'
     title = match.group('title')
-    title_part = ' {}'.format(title) if title else ''
+    title_part = f' {title}' if title else ''
     return '![{}]({}{})'.format(match.group('alt'), url, title_part)
 
 

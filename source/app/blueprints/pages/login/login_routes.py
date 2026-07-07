@@ -24,7 +24,6 @@ import random
 import string
 import time
 import json
-import time
 from flask import Blueprint, flash
 from flask import redirect
 from flask import render_template
@@ -434,66 +433,6 @@ def _register_mfa_failure(user, reason):
         # the lockout timestamp so a fresh /login cannot wipe it.
         _clear_pre_mfa_state(preserve_lockout=True)
         session.pop("username", None)
-
-
-# MFA hardening constants. Values are deliberately conservative — a legitimate
-# user mistypes their token occasionally; an attacker brute-forcing 10^6 TOTP
-# codes should not be able to linearly grind them.
-_MFA_MAX_ATTEMPTS = 5
-_MFA_LOCKOUT_SECONDS = 15 * 60
-
-
-def _get_pre_mfa_user():
-    """Return the user this session just passed password auth for, or None.
-
-    The pre_mfa_user_id marker is set exclusively by wrap_login_user after a
-    successful password (or LDAP) check. Any MFA handler that runs without it
-    is being hit directly by an attacker and must be refused.
-    """
-    pre_mfa_user_id = session.get('pre_mfa_user_id')
-    if pre_mfa_user_id is None:
-        return None
-    return get_user(pre_mfa_user_id, id_key='id')
-
-
-def _clear_pre_mfa_state(preserve_lockout=False):
-    """Clear the markers that prove this session just passed password auth.
-
-    preserve_lockout: when True, keep the lockout timestamp and fail counter
-    so that an attacker cannot wipe a brute-force lockout simply by hitting
-    /login again.
-    """
-    session.pop('pre_mfa_user_id', None)
-    session.pop('pending_mfa_secret', None)
-    if not preserve_lockout:
-        session.pop('mfa_fail_count', None)
-        session.pop('mfa_lockout_until', None)
-
-
-def _mfa_is_locked_out():
-    locked_until = session.get('mfa_lockout_until')
-    if locked_until and locked_until > time.time():
-        return True
-    if locked_until and locked_until <= time.time():
-        # Lockout expired — reset the counter so the user gets a fresh window.
-        session.pop('mfa_lockout_until', None)
-        session['mfa_fail_count'] = 0
-    return False
-
-
-def _register_mfa_failure(user, reason):
-    session['mfa_fail_count'] = session.get('mfa_fail_count', 0) + 1
-    track_activity(
-        f'Failed MFA {reason} for user {user.user} (attempt {session["mfa_fail_count"]}/{_MFA_MAX_ATTEMPTS})',
-        ctx_less=True, display_in_ui=False
-    )
-    if session['mfa_fail_count'] >= _MFA_MAX_ATTEMPTS:
-        session['mfa_lockout_until'] = time.time() + _MFA_LOCKOUT_SECONDS
-        # Drop the pending-MFA marker so the attacker has to go back through
-        # password auth before they get another burst of attempts. Preserve
-        # the lockout timestamp so a fresh /login cannot wipe it.
-        _clear_pre_mfa_state(preserve_lockout=True)
-        session.pop('username', None)
 
 
 @app.route("/auth/mfa-setup", methods=["GET", "POST"])

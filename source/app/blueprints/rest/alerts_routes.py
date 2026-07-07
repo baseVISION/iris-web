@@ -66,25 +66,6 @@ from app.business.alerts import alerts_get_related
 
 alerts_rest_blueprint = Blueprint('alerts_rest', __name__)
 
-# Fields that must be immutable on alert update.  Allowing them via the API
-# lets a user with write access to one customer re-attribute an alert to a
-# customer they cannot see — planting fake alerts or (with an XSS vector)
-# making another user move an alert into an attacker-controlled customer.
-# See SBA-ADV-20260128-05 / CWE-863.
-_ALERT_UPDATE_READONLY_FIELDS = frozenset({
-    'alert_id',            # primary key, must not be rewritten
-    'alert_customer_id',   # ownership — re-attribution bypasses customer ACL
-    'alert_creation_time', # audit integrity; set once at creation
-})
-
-
-def _strip_readonly_update_fields(payload):
-    """Remove fields that must never be mutated via the alert-update API."""
-    if not isinstance(payload, dict):
-        return payload
-    return {k: v for k, v in payload.items() if k not in _ALERT_UPDATE_READONLY_FIELDS}
-
-
 # Fields that must be immutable on alert update. The web UI never changes
 # these, and allowing them via the API lets a user with write access to one
 # customer re-attribute an alert to a customer they cannot see — either to

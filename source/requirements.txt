@@ -24,6 +24,19 @@ Werkzeug==3.1.8
 WTForms==3.2.2
 Flask-SocketIO==5.6.1
 pycrdt-websocket==0.16.3
+# Server-side Yjs/CRDT bindings (Rust `yrs` core via Python) — powers
+# the collaborative markdown editor. We hold the authoritative Y.Doc
+# server-side, apply every client update through it, and render the
+# doc back to markdown on flush. Kept pinned to a minor range so a
+# wire-format change in a future major release doesn't silently break
+# the on-disk `collab_doc.y_state` blobs.
+pycrdt>=0.14,<0.15
+# `markdown-it-py` is the Python port of the same markdown-it parser
+# the frontend runs (via `tiptap-markdown`). Same token semantics on
+# both sides means the round-trip (client markdown → server Y.Doc →
+# server markdown → source column) doesn't lose information at the
+# parser boundary.
+markdown-it-py>=3.0,<4
 uvicorn[standard]==0.49.0
 alembic==1.18.4
 setuptools==81.0.0

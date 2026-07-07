@@ -40,7 +40,6 @@ from app.iris_engine.utils.tracker import track_activity
 from app.models.authorization import User
 
 import datetime
-import time
 import jwt
 
 

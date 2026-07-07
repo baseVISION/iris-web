@@ -284,7 +284,6 @@ def ac_trace_effective_user_permissions(user_id):
     return perms
 
 
-
 def ac_recompute_effective_ac_from_users_list(users_list):
     """
     Recompute all users effective access of users
@@ -402,7 +401,6 @@ def set_user_case_access(user, case_id):
     uca.access_level = CaseAccessLevel.full_access.value
     db.session.add(uca)
     db.session.commit()
-
 
 
 def ac_apply_autofollow_groups_access(case_id):

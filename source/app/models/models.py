@@ -42,6 +42,10 @@ from sqlalchemy.sql import func
 
 from app import app
 from app.db import db
+# WarRoom must be imported (not just referenced by string in UserActivity.war_room
+# below) so it's registered in the declarative class registry by the time any
+# mapper configuration runs.
+from app.models.war_rooms import WarRoom  # noqa: F401
 
 Base = declarative_base()
 metadata = Base.metadata

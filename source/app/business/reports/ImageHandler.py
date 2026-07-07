@@ -107,8 +107,8 @@ class ImageHandler(PictureGlobals):
         try:
             picture = sub_document.add_picture(image_filename)
         except Exception as e:
-            self._logger.debug('Error while adding image {}: {}'.format(image_filename, e.__str__()))
-            raise RenderingError(self._logger, 'Image could not be added (try PNG instead of JPEG): {}'.format(image_filename))
+            self._logger.debug(f'Error while adding image {image_filename}: {e.__str__()}')
+            raise RenderingError(self._logger, f'Image could not be added (try PNG instead of JPEG): {image_filename}')
 
         target_pct = getattr(self, '_target_width_pct', None)
         if target_pct:

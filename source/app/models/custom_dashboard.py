@@ -39,7 +39,7 @@ class CustomDashboard(db.Model):
     dashboard_uuid = Column(UUID(as_uuid=True), server_default=text("gen_random_uuid()"), nullable=False, unique=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
-    owner_id = Column(ForeignKey('user.id'), nullable=True)
+    owner_id = Column(ForeignKey('user.id', ondelete='SET NULL'), nullable=True)
     is_shared = Column(Boolean, nullable=False, server_default=text("false"))
     is_system = Column(Boolean, nullable=False, server_default=text("false"))
     definition = Column(JSONB, nullable=True)

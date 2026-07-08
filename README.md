@@ -6,7 +6,7 @@
 <p align="center">
   Incident Response Investigation System
   <br>
-  <i>Current Version v2.5.0-bv1</i>
+  <i>Current Version v2.5.0-bv2</i>
   <br>
   <a href="https://v200.beta.dfir-iris.org">Online Demonstration</a>
 </p>

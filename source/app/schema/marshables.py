@@ -2145,7 +2145,7 @@ class AuthorizationGroupSchema(ma.SQLAlchemyAutoSchema):
     group_description: str = auto_field('group_description', required=True, validate=Length(min=2))
     group_auto_follow_access_level: Optional[bool] = auto_field('group_auto_follow_access_level', required=False,
                                                                 dump_default=False)
-    group_permissions: int = fields.Integer(required=False)
+    group_permissions: int = fields.Integer(required=False, load_default=0)
     group_members: Optional[List[Dict[str, Any]]] = fields.List(fields.Dict, required=False, allow_none=True)
     group_permissions_list: Optional[List[Dict[str, Any]]] = fields.List(fields.Dict, required=False, allow_none=True)
     group_cases_access: Optional[List[Dict[str, Any]]] = fields.List(fields.Dict, required=False, allow_none=True)

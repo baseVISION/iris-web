@@ -10,7 +10,7 @@ The upstream project is a DFIR case-management platform (Python/Flask backend, S
 | Branch | Purpose | Push rules |
 |---|---|---|
 | `bv-main` | Production-stable. Tagged releases deploy to AKS prod. | PR only, 1 approval + CI green |
-| `bv-develop` | Integration branch. Pushes auto-deploy to AKS staging. | Direct push allowed; PR preferred |
+| `bv-develop` | Integration branch. Staging (AKS) deploy is triggered manually, not automatically on push. | Direct push allowed; PR preferred |
 | `origin/master` | Upstream master mirror — **never modify** | Read-only |
 | `origin/develop` | Upstream develop mirror — **never modify** | Read-only |
 

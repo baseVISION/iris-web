@@ -56,7 +56,7 @@ git clone https://github.com/dfir-iris/iris-web.git
 cd iris-web
 
 # Checkout to the last tagged version 
-git checkout v2.4.20
+git checkout v2.5.0-beta.1
 # Copy the environment file 
 cp .env.model .env
 

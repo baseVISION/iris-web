@@ -66,15 +66,20 @@ from app.business.alerts import alerts_get_related
 
 alerts_rest_blueprint = Blueprint('alerts_rest', __name__)
 
-# Fields that must be immutable on alert update.  Allowing them via the API
-# lets a user with write access to one customer re-attribute an alert to a
-# customer they cannot see — planting fake alerts or (with an XSS vector)
-# making another user move an alert into an attacker-controlled customer.
-# See SBA-ADV-20260128-05 / CWE-863.
+# Fields that must be immutable on alert update. The web UI never changes
+# these, and allowing them via the API lets a user with write access to one
+# customer re-attribute an alert to a customer they cannot see — either to
+# plant fake alerts under another customer's name, or (combined with an XSS
+# vector) to make another user move an alert into an attacker-controlled
+# customer. See GHSA-8hwq-v6vm-9grr / SBA-ADV-20260128-05 / CWE-863.
+#
+# alert_id:             primary key, must not be rewritten
+# alert_customer_id:    ownership, re-attribution bypasses customer-scoped ACL
+# alert_creation_time:  audit integrity; set once at creation
 _ALERT_UPDATE_READONLY_FIELDS = frozenset({
-    'alert_id',            # primary key, must not be rewritten
-    'alert_customer_id',   # ownership — re-attribution bypasses customer ACL
-    'alert_creation_time', # audit integrity; set once at creation
+    'alert_id',
+    'alert_customer_id',
+    'alert_creation_time',
 })
 
 
@@ -350,8 +355,10 @@ def alerts_update_route(alert_id) -> Response:
     do_status_hook = False
 
     try:
-        # Load the JSON data from the request. Drop fields the caller must not
-        # be allowed to change (SBA-ADV-20260128-05 / CWE-863).
+        # Drop fields the caller must not be allowed to change on update
+        # (GHSA-8hwq-v6vm-9grr / SBA-ADV-20260128-05 / CWE-863). Done before
+        # any other processing so these values never reach the activity log
+        # or the ORM.
         data = _strip_readonly_update_fields(request.get_json())
 
         activity_data = []
@@ -413,6 +420,7 @@ def alerts_update_route(alert_id) -> Response:
 
 
 @alerts_rest_blueprint.route('/alerts/batch/update', methods=['POST'])
+@endpoint_deprecated('PUT', '/api/v2/alerts/{identifier} (repeated per alert)')
 @ac_api_requires(Permissions.alerts_write)
 def alerts_batch_update_route() -> Response:
     """
@@ -430,7 +438,10 @@ def alerts_batch_update_route() -> Response:
     # Load the JSON data from the request
     data = request.get_json()
 
-    # Get the list of alert IDs and updates from the request data
+    # Get the list of alert IDs and updates from the request data. Strip
+    # immutable fields from the batch payload so one API call can't silently
+    # re-attribute every selected alert to a different customer
+    # (GHSA-8hwq-v6vm-9grr / SBA-ADV-20260128-05 / CWE-863).
     alert_ids: List[int] = data.get('alert_ids', [])
     updates = _strip_readonly_update_fields(data.get('updates', {}))
 
@@ -489,6 +500,7 @@ def alerts_batch_update_route() -> Response:
 
 
 @alerts_rest_blueprint.route('/alerts/batch/delete', methods=['POST'])
+@endpoint_deprecated('DELETE', '/api/v2/alerts/{identifier} (repeated per alert)')
 @ac_api_requires(Permissions.alerts_delete)
 def alerts_batch_delete_route() -> Response:
     """
@@ -581,6 +593,7 @@ def alerts_delete_route(alert_id) -> Response:
 
 
 @alerts_rest_blueprint.route('/alerts/escalate/<int:alert_id>', methods=['POST'])
+@endpoint_deprecated('POST', '/api/v2/alerts/escalate/{identifier}')
 @ac_api_requires(Permissions.alerts_write)
 def alerts_escalate_route(alert_id) -> Response:
     """
@@ -652,6 +665,7 @@ def alerts_escalate_route(alert_id) -> Response:
 
 
 @alerts_rest_blueprint.route('/alerts/merge/<int:alert_id>', methods=['POST'])
+@endpoint_deprecated('POST', '/api/v2/alerts/merge/{identifier}')
 @ac_api_requires(Permissions.alerts_write)
 def alerts_merge_route(alert_id) -> Response:
     """
@@ -719,6 +733,7 @@ def alerts_merge_route(alert_id) -> Response:
 
 
 @alerts_rest_blueprint.route('/alerts/unmerge/<int:alert_id>', methods=['POST'])
+@endpoint_deprecated('POST', '/api/v2/alerts/unmerge/{identifier}')
 @ac_api_requires(Permissions.alerts_write)
 def alerts_unmerge_route(alert_id) -> Response:
     """
@@ -775,6 +790,7 @@ def alerts_unmerge_route(alert_id) -> Response:
 
 
 @alerts_rest_blueprint.route('/alerts/batch/merge', methods=['POST'])
+@endpoint_deprecated('POST', '/api/v2/alerts/batch/merge')
 @ac_api_requires(Permissions.alerts_write)
 def alerts_batch_merge_route() -> Response:
     """
@@ -852,6 +868,7 @@ def alerts_batch_merge_route() -> Response:
 
 
 @alerts_rest_blueprint.route('/alerts/batch/escalate', methods=['POST'])
+@endpoint_deprecated('POST', '/api/v2/alerts/batch/escalate')
 @ac_api_requires(Permissions.alerts_write)
 def alerts_batch_escalate_route() -> Response:
     """
@@ -955,6 +972,7 @@ def alert_comments_get(alert_id):
 
 
 @alerts_rest_blueprint.route('/alerts/<int:alert_id>/comments/<int:com_id>/delete', methods=['POST'])
+@endpoint_deprecated('DELETE', '/api/v2/alerts/{alert_identifier}/comments/{identifier}')
 @ac_api_requires(Permissions.alerts_write)
 def alert_comment_delete(alert_id, com_id):
     """
@@ -1018,6 +1036,7 @@ def alert_comment_get(alert_id, com_id):
 
 
 @alerts_rest_blueprint.route('/alerts/<int:alert_id>/comments/<int:com_id>/edit', methods=['POST'])
+@endpoint_deprecated('PUT', '/api/v2/alerts/{alert_identifier}/comments/{identifier}')
 @ac_api_requires(Permissions.alerts_write)
 def alert_comment_edit(alert_id, com_id):
     """

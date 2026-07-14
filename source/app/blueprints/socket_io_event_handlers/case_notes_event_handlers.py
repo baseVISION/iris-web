@@ -19,6 +19,7 @@
 from flask import request
 from flask_socketio import emit
 from flask_socketio import join_room
+from flask_socketio import leave_room
 
 from app import socket_io
 from app.blueprints.access_controls import ac_socket_requires
@@ -54,7 +55,21 @@ def socket_join_note(data):
 
     emit('join-notes', {
         'message': f"{iris_current_user.user} just joined",
-        "user": iris_current_user.user
+        "user": iris_current_user.user,
+        "note_id": data.get('note_id')
+    }, room=room)
+
+
+@ac_socket_requires(CaseAccessLevel.full_access)
+def socket_leave_note(data):
+
+    room = data['channel']
+    leave_room(room=room)
+
+    emit('leave-note', {
+        'message': f"{iris_current_user.user} just left",
+        "user": iris_current_user.user,
+        "note_id": data.get('note_id')
     }, room=room)
 
 
@@ -98,6 +113,7 @@ def register_notes_event_handlers():
     socket_io.on_event('save-note', socket_save_note)
     socket_io.on_event('clear_buffer-note', socket_clear_buffer_note)
     socket_io.on_event('join-notes', socket_join_note)
+    socket_io.on_event('leave-note', socket_leave_note)
     socket_io.on_event('ping-note', socket_ping_note)
     socket_io.on_event('pong-note', socket_pong_note)
     socket_io.on_event('overview-map-note', socket_overview_map_note)

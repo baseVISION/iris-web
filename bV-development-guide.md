@@ -22,7 +22,7 @@ upstream/develop  ────────────────────�
         │
         │ PR from release/ branch only
         ▼
-   bv-develop   ◄── integration branch → AKS staging
+   bv-develop   ◄── integration branch → AKS staging (manual deploy trigger)
         │
    ┌────┴────────────────────┐
    ▼                         ▼
@@ -37,7 +37,7 @@ sync/upstream-<date>                    → PR to bv-develop (short-lived, delet
 | Branch | Purpose | Azure DevOps trigger |
 |---|---|---|
 | `bv-main` | Production-stable, tagged releases | Tag `v*-bv*` → deploy AKS prod (manual approval) |
-| `bv-develop` | Integration, always deployable | Push → deploy AKS staging (auto) |
+| `bv-develop` | Integration, always deployable | Push → deploy AKS staging (manual trigger) |
 | `origin/master` | Upstream master mirror — do not modify | None |
 | `origin/develop` | Upstream develop mirror — do not modify | None |
 
@@ -160,7 +160,8 @@ Rule: **if a commit has no `[BV]` prefix, it must be clean enough to open a PR o
 | Trigger | Jobs | Gate |
 |---|---|---|
 | PR to `bv-develop` | Build, static checks, unit tests | Auto — must pass before merge |
-| Push to `bv-develop` | Build, push to ACR (`:develop` tag), deploy AKS staging | Auto |
+| Push to `bv-develop` | Build, push to ACR (`:develop` tag) | Auto |
+| Deploy AKS staging | Deploy latest `:develop` image | Manual trigger |
 | Tag `v*-bv*` | Build, push to ACR (`:version` + `:latest` tags), deploy AKS prod | Manual approval |
 
 ### Docker image naming in ACR

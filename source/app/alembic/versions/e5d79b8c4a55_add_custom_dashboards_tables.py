@@ -49,7 +49,6 @@ def upgrade():
         op.create_index('ix_custom_dashboard_widget_dashboard_id', 'custom_dashboard_widget', ['dashboard_id'])
 
 
-
 def downgrade():
     if _has_table('custom_dashboard_widget'):
         op.drop_index('ix_custom_dashboard_widget_dashboard_id', table_name='custom_dashboard_widget')

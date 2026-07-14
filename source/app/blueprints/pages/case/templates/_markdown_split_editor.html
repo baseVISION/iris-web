@@ -1,0 +1,22 @@
+{# Shared Milkdown split-editor markup, mounted client-side via mountMarkdownSplitEditor(prefix, ...).
+   Set `split_prefix` (and optionally `split_initial_markdown`) before including. #}
+<div id="{{ split_prefix }}_split_shell" class="iris-split-shell" data-theme="{% if current_user.in_dark_mode %}dark{% else %}light{% endif %}" data-initial-markdown="{{ split_initial_markdown|default('') }}">
+    <div class="row mb-1 align-items-center">
+        <div class="col">
+            <div id="{{ split_prefix }}_view_toggle" class="iris-view-toggle" role="group" aria-label="Editor view">
+                <button type="button" data-view="split" class="is-active" aria-pressed="true">Split</button>
+                <button type="button" data-view="source" aria-pressed="false">Source</button>
+                <button type="button" data-view="preview" aria-pressed="false">Preview</button>
+            </div>
+        </div>
+    </div>
+    <div id="{{ split_prefix }}_split" class="iris-split view-split">
+        <div id="{{ split_prefix }}_source" class="iris-split-pane iris-split-source is-active">
+            <div class="iris-split-label">MARKDOWN</div>
+        </div>
+        <div id="{{ split_prefix }}_divider" class="iris-split-divider" role="separator"></div>
+        <div id="{{ split_prefix }}_preview" class="iris-split-pane iris-split-preview">
+            <div class="iris-split-label">PREVIEW</div>
+        </div>
+    </div>
+</div>

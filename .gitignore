@@ -32,3 +32,6 @@ certificates/web_certificates/*.pem
 certificates/web_certificates/*.key
 !certificates/web_certificates/iris_dev_*
 local_dev/
+.serena/
+.tokensave
+.claude/

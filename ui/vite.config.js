@@ -38,6 +38,10 @@ export default defineConfig(({ mode }) => {
 
 
     return {
+        // App serves built assets under /static/ (nginx + Flask). Without this,
+        // vite's dynamic-import/chunk URLs resolve to /assets/... and 404.
+        // Hardcoded <script src="/static/..."> tags in templates are unaffected.
+        base: '/static/',
         build: {
             minify: false,
             manifest: false,

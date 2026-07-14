@@ -137,6 +137,12 @@ def update_note(note_content, note_title, update_date, user_id, note_id, caseid)
 
 def update_note_revision(user_identifier, note: Notes) -> bool:
     try:
+        db.session.query(
+            Notes.note_id
+        ).filter(
+            Notes.note_id == note.note_id
+        ).with_for_update().first()
+
         latest_version = db.session.query(
             NoteRevisions
         ).filter_by(
@@ -475,12 +481,16 @@ def get_directory_with_note_count(directory):
     return directory_dict
 
 
-def search_notes(search_value):
-    search_condition = and_()
+def search_notes(search_value, accessible_case_ids=None):
+    if accessible_case_ids is not None and not accessible_case_ids:
+        return []
+
+    scope_filter = Notes.note_case_id.in_(accessible_case_ids) if accessible_case_ids is not None else and_()
+
     notes = Notes.query.filter(
         Notes.note_content.like(f'%{search_value}%'),
         Cases.client_id == Client.client_id,
-        search_condition
+        scope_filter
     ).with_entities(
         Notes.note_id,
         Notes.note_title,

@@ -68,13 +68,133 @@ def export_case_json_extended(case_id):
     return export
 
 
-def process_md_images_links_for_report(markdown_text):
-    """Process images links in markdown for better processing on the generator side
-        Creates proper links with FQDN and removal of scale
+def _docx_width_percent(size_token):
+    """Extract a width percentage (1..100) from an IRIS image size token.
+
+    Accepts the width part of tokens like '50%x*', '100%x40%', '50.5%'. Returns None for
+    pixel sizes, '*', or anything that is not a percentage (image then embeds at native size).
     """
-    markdown = re.sub(r'(/datastore\/file\/view\/\d+\?cid=\d+)( =[\dA-z%]*)\)',
-                      r"http://127.0.0.1:8000:/\1)", markdown_text)
-    return markdown
+    if not size_token:
+        return None
+    width = re.split(r'[xX]', size_token, maxsplit=1)[0].strip()
+    match = re.fullmatch(r'(\d+(?:\.\d+)?)%', width)
+    if not match:
+        return None
+    return max(1, min(100, round(float(match.group(1)))))
+
+
+# A markdown image whose destination is a datastore link, with optional ' =SIZE' suffix and
+# optional title: ![alt](/datastore/file/view/ID?cid=CID[&...] [=W%x*] ["title"|'title'])
+_DOCX_DATASTORE_IMAGE = re.compile(
+    r'!\[(?P<alt>[^\]]*)\]\(\s*'
+    r'(?P<url>/datastore/file/view/\d+\?cid=\d+[^\s)"\']*)'
+    r'(?:\s+=(?P<size>[^\s)"\']+))?'
+    r'(?:\s+(?P<title>"[^"]*"|\'[^\']*\'))?'
+    r'\s*\)'
+)
+
+
+def _docx_rewrite_datastore_image(match):
+    """Absolutize a datastore image URL and carry its width as an &iriswidth= query param.
+
+    ImageHandler resolves the file locally (the host is irrelevant) and reads iriswidth to
+    scale the embedded picture. cid stays first so ImageHandler's regex still matches.
+    """
+    url = 'http://127.0.0.1:8000' + match.group('url')
+    pct = _docx_width_percent(match.group('size'))
+    if pct is not None:
+        url += f'&iriswidth={pct}'
+    title = match.group('title')
+    title_part = f' {title}' if title else ''
+    return '![{}]({}{})'.format(match.group('alt'), url, title_part)
+
+
+_FENCE_OPEN = re.compile(r'(`{3,}|~{3,})')
+
+# Milkdown/Crepe serializes empty paragraphs and soft breaks as literal <br /> HTML. mistletoe
+# (the DOCX renderer) does not parse inline HTML, so a <br> would be emitted as literal "<br />"
+# text in the Word document. Convert it to a real newline so it renders as a line break (and
+# standalone <br> "blank line" paragraphs collapse) — only outside fenced code blocks.
+_HTML_BR = re.compile(r'<br\s*/?>', re.IGNORECASE)
+
+
+def _fence_run(line):
+    """Return the fence delimiter run (e.g. '```', '~~~~') if `line` is a CommonMark fenced-code
+    delimiter, else None. Rules enforced: at most 3 leading spaces (4+ is indented code, not a
+    fence), and a backtick fence's info string may not contain a backtick (so '```code```' on one
+    line is inline code/text, not a fence opener)."""
+    stripped = line.lstrip(' ')
+    if len(line) - len(stripped) > 3:
+        return None
+    m = _FENCE_OPEN.match(stripped)
+    if not m:
+        return None
+    run = m.group(1)
+    rest = stripped[len(run):]
+    if run[0] == '`' and '`' in rest:
+        return None
+    return run
+
+
+def _process_md_images_for_docx(markdown_text):
+    """DOCX-only image preprocessing, applied only OUTSIDE fenced code blocks so literal
+    image examples inside ``` / ~~~ fences are left untouched.
+
+    Deterministic O(n) line scanner (no catastrophic backtracking). Datastore image syntax is
+    always single-line, so non-code lines are transformed individually. A code block opened by
+    N backticks/tildes is closed only by a line of >=N of the SAME char with nothing else after
+    it (CommonMark); an unterminated fence keeps everything to EOF as code.
+    """
+    if not markdown_text:
+        return markdown_text
+
+    out = []
+    fence_char = None
+    fence_len = 0
+    for line in markdown_text.split('\n'):
+        run = _fence_run(line)
+        if fence_char is None:
+            if run:
+                fence_char = run[0]
+                fence_len = len(run)
+                out.append(line)            # opening fence, untouched
+            else:
+                line = _DOCX_DATASTORE_IMAGE.sub(_docx_rewrite_datastore_image, line)
+                if line.lstrip().startswith('|'):
+                    # GFM table row: Milkdown serialises empty cells as <br/>. Converting those
+                    # to '\n' (as below) would inject a newline mid-row and shatter the table,
+                    # so empty boxes broke the export. Collapse to a space instead: the cell
+                    # stays empty and the row stays on one line, so the table renders whether
+                    # cells are populated or not.
+                    line = _HTML_BR.sub(' ', line)
+                else:
+                    line = _HTML_BR.sub('\n', line)
+                out.append(line)
+        else:
+            out.append(line)                # inside a code block, untouched
+            # close: same char, length >= opener, only whitespace after the run
+            if run and run[0] == fence_char and len(run) >= fence_len:
+                if line.lstrip(' ')[len(run):].strip() == '':
+                    fence_char = None
+                    fence_len = 0
+    return '\n'.join(out)
+
+
+def process_md_images_links_for_report(markdown_text, for_docx=False):
+    """Process image links in markdown for the report generator.
+
+    for_docx=False (default): legacy behavior, kept byte-for-byte for the REST API and
+    Markdown exports (absolutizes only sized datastore links and strips the size).
+
+    for_docx=True: DOCX export — absolutize ALL datastore links (an unsized relative link
+    otherwise fails report generation) and carry the width as &iriswidth= for ImageHandler.
+    """
+    if not for_docx:
+        markdown = re.sub(r'(/datastore\/file\/view\/\d+\?cid=\d+)( =[\dA-z%]*)\)',
+                          r"http://127.0.0.1:8000:/\1)", markdown_text)
+        return markdown
+
+    return _process_md_images_for_docx(markdown_text)
 
 
 def export_caseinfo_json_extended(case_id):
@@ -179,7 +299,7 @@ def export_case_evidences_json(case_id):
     return []
 
 
-def export_case_notes_json(case_id):
+def export_case_notes_json(case_id, for_docx=False):
     # Fetch all notes associated with the case
     notes = Notes.query.filter(
         Notes.note_case_id == case_id
@@ -195,7 +315,7 @@ def export_case_notes_json(case_id):
         note_comments = get_case_note_comments(note.note_id)
         serialized_note = note_schema.dump(note)
         serialized_note['comments'] = comments_schema.dump(note_comments)
-        serialized_note['note_content'] = process_md_images_links_for_report(serialized_note['note_content'])
+        serialized_note['note_content'] = process_md_images_links_for_report(serialized_note['note_content'], for_docx=for_docx)
 
         serialized_notes.append(serialized_note)
 
@@ -333,7 +453,7 @@ def export_case_tasks_json(case_id):
     return task_with_assignees
 
 
-def export_case_assets_json(case_id):
+def export_case_assets_json(case_id, for_docx=False):
     ret = []
 
     res = CaseAssets.query.with_entities(
@@ -360,6 +480,9 @@ def export_case_assets_json(case_id):
 
     for row in res:
         row = row._asdict()
+        row['asset_description'] = process_md_images_links_for_report(
+            row['asset_description'] or '', for_docx=for_docx
+        )
         row['light_asset_description'] = row['asset_description']
 
         ial = IocAssetLink.query.with_entities(

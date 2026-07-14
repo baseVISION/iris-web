@@ -68,6 +68,31 @@ podman compose -f docker-compose.bv.yml -p iris-bv logs -f bv-iriswebapp-app
 
 ---
 
+## Running the test suite
+
+`tests/*.py` talk to the app container directly on `127.0.0.1:8000` (see `API_URL` in
+`tests/iris.py`), so run the stack under its own project name (`iris-test`) and only start the
+services the tests need — no nginx, no frontend. Never point this project name at a real dev
+stack; treat its volumes as throwaway.
+
+Don't run this alongside a real dev stack (`iris-bv`, `iris-web-bv`, ...) — they'd collide on the
+same host ports (8000/5432).
+
+```bash
+# Build and start a disposable test stack (no nginx/worker needed to exercise the REST API)
+podman compose -f docker-compose.dev.yml -p iris-test up -d --build db rabbitmq app worker
+
+# Wait for the app container to become healthy, then run the suite from the host
+# (test files are named tests_*.py, not pytest's default test_*.py pattern)
+cd tests
+python -m unittest discover -p 'tests_*.py' -v
+
+# Tear down completely when done — safe to delete, this project only ever holds test fixtures
+podman compose -f docker-compose.dev.yml -p iris-test down -v
+```
+
+---
+
 ## Working on UI (JavaScript/Svelte) changes
 
 The `ui/dist` folder is bind-mounted into the container at `/iriswebapp/static`, so you can

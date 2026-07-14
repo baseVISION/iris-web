@@ -34,3 +34,4 @@ certificates/web_certificates/*.key
 local_dev/
 .serena/
 .tokensave
+.claude/

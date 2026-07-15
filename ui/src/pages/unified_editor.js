@@ -7,6 +7,7 @@ import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, keymap, placeholder as placeholderExtension } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
 import { irisToMilkdown, milkdownToIris, uploadThroughIris } from './milkdown_shared.js';
+import { milkdownCodeLanguages } from '../lib/milkdown_code_languages.js';
 
 const instances = new WeakMap();
 
@@ -351,6 +352,9 @@ class MilkdownEditor {
             root: this.element,
             defaultValue: irisToMilkdown(this.value),
             featureConfigs: {
+                [Crepe.Feature.CodeMirror]: {
+                    languages: milkdownCodeLanguages,
+                },
                 [Crepe.Feature.ImageBlock]: {
                     onUpload: uploadThroughIris,
                 },

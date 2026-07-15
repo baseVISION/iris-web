@@ -46,9 +46,18 @@ if [ -n "${SERVER_NAME:-}" ]; then
     export SERVER_NAME
 fi
 
+# The /collab/ location resolves its upstream at request time so nginx
+# doesn't refuse to start when the (optional) collab service is absent.
+# The resolver address is container-runtime-specific: Docker's embedded
+# DNS is always 127.0.0.11, but podman/netavark's aardvark-dns listens on
+# the network gateway instead. Read the real nameserver out of this
+# container's own /etc/resolv.conf so both runtimes work.
+DNS_RESOLVER=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf)
+export DNS_RESOLVER="${DNS_RESOLVER:-127.0.0.11}"
+
 # envsubst will make a substitution on every $variable in a file, since the nginx file contains nginx variable like $host, we have to limit the substitution to this set
 # otherwise, each nginx variable will be replaced by an empty string
-envsubst '${INTERFACE_HTTPS_PORT} ${IRIS_UPSTREAM_SERVER} ${IRIS_UPSTREAM_PORT} ${SERVER_NAME} ${KEY_FILENAME} ${CERT_FILENAME} ${IRIS_FRONTEND_SERVER} ${IRIS_FRONTEND_PORT}' < /etc/nginx/nginx.conf > /tmp/nginx.conf
+envsubst '${INTERFACE_HTTPS_PORT} ${IRIS_UPSTREAM_SERVER} ${IRIS_UPSTREAM_PORT} ${SERVER_NAME} ${KEY_FILENAME} ${CERT_FILENAME} ${IRIS_FRONTEND_SERVER} ${IRIS_FRONTEND_PORT} ${DNS_RESOLVER}' < /etc/nginx/nginx.conf > /tmp/nginx.conf
 cp /tmp/nginx.conf /etc/nginx/nginx.conf
 rm /tmp/nginx.conf
 

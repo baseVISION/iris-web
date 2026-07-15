@@ -413,9 +413,17 @@ def ac_socket_requires(*access_level):
                 return redirect(not_authenticated_redirection_url(request.full_path))
 
             chan_id = args[0].get('channel')
-            if chan_id:
+            if not chan_id:
+                return _ac_return_access_denied(caseid=0)
+
+            # Clients occasionally join a room before a case is selected
+            # (e.g. `case-null`), producing a non-numeric id. That's not an
+            # authorization bypass attempt, just a premature join - deny
+            # gracefully instead of raising and killing the socketio
+            # event-handler thread.
+            try:
                 case_id = int(chan_id.replace('case-', '').split('-')[0])
-            else:
+            except ValueError:
                 return _ac_return_access_denied(caseid=0)
 
             access = ac_fast_check_user_has_case_access(iris_current_user.id, case_id, access_level)

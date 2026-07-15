@@ -147,8 +147,11 @@ def wrap_login_user(user, is_oidc=False):
             # here — an attacker who re-POSTs /login mustn't be able to zero
             # out the fail counter and get a fresh burst of 5 tokens.
             locked_until = session.get('mfa_lockout_until')
-            locked_user_id = session.get('mfa_fail_user_id')
-            if locked_user_id == user.id and locked_until and locked_until > time.time():
+            if locked_until and locked_until > time.time():
+                # An active lockout exists in this session, regardless of
+                # which user triggered it. Logging in as a different user
+                # (even the attacker's own account) must not be able to
+                # clear another account's lockout early.
                 flash('Too many attempts. Please try again later.', 'danger')
                 return redirect(url_for('login.login'))
 
@@ -160,6 +163,7 @@ def wrap_login_user(user, is_oidc=False):
             if not same_failed_user:
                 session['mfa_fail_count'] = 0
                 session.pop('mfa_lockout_until', None)
+                session.pop('mfa_fail_user_id', None)
             session.pop('pending_mfa_secret', None)
             return redirect(url_for('mfa_verify'))
 

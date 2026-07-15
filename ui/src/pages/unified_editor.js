@@ -2,7 +2,6 @@ import { Crepe } from '@milkdown/crepe';
 import { editorViewCtx, parserCtx, serializerCtx } from '@milkdown/kit/core';
 import { Slice } from '@milkdown/kit/prose/model';
 import { autocompletion } from '@codemirror/autocomplete';
-import { languages } from '@codemirror/language-data';
 import { Compartment, EditorState } from '@codemirror/state';
 import { EditorView, keymap, placeholder as placeholderExtension } from '@codemirror/view';
 import { basicSetup } from 'codemirror';
@@ -76,7 +75,7 @@ function normalizeKey(key) {
 
 function findLanguage(mode) {
     const name = String(mode || '').split('/').pop().toLowerCase();
-    return languages.find((description) => {
+    return milkdownCodeLanguages.find((description) => {
         if (description.name.toLowerCase() === name) {
             return true;
         }
@@ -302,8 +301,8 @@ class CodeEditor {
         const selection = this.view.state.selection.main;
         const selected = this.view.state.sliceDoc(selection.from, selection.to);
         const insert = String(snippet || '')
-            .replace(/\$\{1:\$SELECTION\}/g, selected)
-            .replace(/\$SELECTION/g, selected);
+            .replace(/\$\{1:\$SELECTION\}/g, () => selected)
+            .replace(/\$SELECTION/g, () => selected);
         this.view.dispatch({
             changes: { from: selection.from, to: selection.to, insert },
             selection: { anchor: selection.from + insert.length },
@@ -482,8 +481,8 @@ class MilkdownEditor {
             const { from, to } = view.state.selection;
             const selected = view.state.doc.textBetween(from, to, '\n');
             const insert = String(snippet || '')
-                .replace(/\$\{1:\$SELECTION\}/g, selected)
-                .replace(/\$SELECTION/g, selected);
+                .replace(/\$\{1:\$SELECTION\}/g, () => selected)
+                .replace(/\$SELECTION/g, () => selected);
             view.dispatch(view.state.tr.insertText(insert, from, to));
         });
         return this;
@@ -503,6 +502,19 @@ class MilkdownEditor {
     }
 
     async destroy() {
+        // destroyPrevious() calls this fire-and-forget from a sync
+        // constructor, so `this.ready` (the pending initialize()) may not
+        // have resolved yet -- `this.crepe` would still be null. Awaiting it
+        // first means we always end up destroying the Crepe instance instead
+        // of silently no-oping and leaving initialize() to mount its editor
+        // into an element a newer instance already took over, unremoved.
+        if (this.ready) {
+            try {
+                await this.ready;
+            } catch {
+                return;
+            }
+        }
         if (this.crepe) {
             try {
                 await this.crepe.destroy();

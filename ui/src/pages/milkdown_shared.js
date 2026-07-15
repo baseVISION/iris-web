@@ -1,5 +1,9 @@
 function transformOutsideCode(md, transform) {
     const fence = /(^|\n)([ \t]*)(`{3,}|~{3,})[^\n]*\n[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g;
+    // Matches only the opening delimiter of a fence, used to detect an
+    // unterminated fence in the remaining tail once the loop above has
+    // consumed every properly closed one.
+    const opener = /(^|\n)([ \t]*)(`{3,}|~{3,})[^\n]*(?:\n|$)/;
     let output = '';
     let last = 0;
     let match;
@@ -8,7 +12,17 @@ function transformOutsideCode(md, transform) {
         output += match[0];
         last = match.index + match[0].length;
     }
-    output += transform(md.slice(last));
+    const tail = md.slice(last);
+    const unterminated = opener.exec(tail);
+    if (unterminated) {
+        // Leave the unterminated fence and everything after it untouched
+        // instead of running the prose transform over what is meant to be
+        // code content.
+        output += transform(tail.slice(0, unterminated.index));
+        output += tail.slice(unterminated.index);
+    } else {
+        output += transform(tail);
+    }
     return output;
 }
 

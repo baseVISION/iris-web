@@ -147,16 +147,19 @@ def wrap_login_user(user, is_oidc=False):
             # here — an attacker who re-POSTs /login mustn't be able to zero
             # out the fail counter and get a fresh burst of 5 tokens.
             locked_until = session.get('mfa_lockout_until')
-            if locked_until and locked_until > time.time():
+            locked_user_id = session.get('mfa_fail_user_id')
+            if locked_user_id == user.id and locked_until and locked_until > time.time():
                 flash('Too many attempts. Please try again later.', 'danger')
                 return redirect(url_for('login.login'))
 
             # Mark this browser session as the one that just passed password
             # auth for this user. mfa_setup / mfa_verify will refuse to run
             # for any other user id, preventing cross-user MFA handler abuse.
+            same_failed_user = session.get('mfa_fail_user_id') == user.id
             session['pre_mfa_user_id'] = user.id
-            session['mfa_fail_count'] = 0
-            session.pop('mfa_lockout_until', None)
+            if not same_failed_user:
+                session['mfa_fail_count'] = 0
+                session.pop('mfa_lockout_until', None)
             session.pop('pending_mfa_secret', None)
             return redirect(url_for('mfa_verify'))
 

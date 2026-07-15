@@ -22,6 +22,8 @@
         <div class="login__right_part col-xs-12 col-md-4">
             <h3 class="login__form_title">Sign In</h3>
 
+            {% include "_auth_messages.html" %}
+
             {% if auth_type == "oidc" %}
                 <a href="{{ url_for('login.oidc_login') }}" class="btn btn-primary login__submit_button login__form_title">OIDC Sign In</a>
             {% else %}

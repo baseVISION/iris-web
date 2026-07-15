@@ -359,6 +359,11 @@ class SplitEditor {
             return;
         }
 
+        // Defensive: an orphaned instance (e.g. a superseded note_detail()
+        // call that never got destroy()-ed) may have left its own bar behind
+        // in this same parent. Remove stragglers so they can't stack.
+        parent.querySelectorAll('.iris-collab-bar').forEach((stale) => stale.remove());
+
         this.collabBar = document.createElement('div');
         this.collabBar.className = 'iris-collab-bar';
 
@@ -399,6 +404,12 @@ class SplitEditor {
         if (!this.sourcePane) {
             return;
         }
+
+        // Defensive: same reasoning as installPresenceBar() above -- an
+        // orphaned instance's badge lives directly on sourcePane, which is
+        // never cleared by create() (only the child source/wysiwyg mounts
+        // are), so it survives re-creation unless removed here.
+        this.sourcePane.querySelectorAll('.iris-collab-liveview-badge').forEach((stale) => stale.remove());
 
         this.collabSourceBadge = document.createElement('div');
         this.collabSourceBadge.className = 'iris-collab-liveview-badge';

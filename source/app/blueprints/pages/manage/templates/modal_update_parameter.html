@@ -46,19 +46,17 @@
 <script>
   $(document).ready(function(){
   if ($('#editor_detail').length != 0) {
-     var editor = ace.edit("editor_detail",
+     var editor = create_iris_code_editor("editor_detail",
             {
                 autoScrollEditorIntoView: true,
                 minLines: 30,
             });
-        editor.setTheme("ace/theme/tomorrow");
-
         {% if parameter["type"].endswith("json") %}
-        editor.session.setMode("ace/mode/json");
+        editor.setMode("json");
         {% elif parameter["type"].endswith("html") %}
-        editor.session.setMode("ace/mode/html");
+        editor.setMode("html");
         {% elif parameter["type"].endswith("markdown") %}
-        editor.session.setMode("ace/mode/markdown");
+        editor.setMode("markdown");
         {% endif %}
 
         editor.renderer.setShowGutter(true);

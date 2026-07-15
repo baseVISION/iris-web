@@ -50,7 +50,7 @@ function add_modal_rfile() {
              return false;
         }
 
-        g_evidence_desc_editor = get_new_ace_editor('evidence_description', 'evidence_desc_content', 'target_evidence_desc',
+        g_evidence_desc_editor = get_new_markdown_editor('evidence_description', 'evidence_desc_content', 'target_evidence_desc',
                     function() {
                         $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                         $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
@@ -207,7 +207,7 @@ function edit_rfiles(rfiles_id) {
              return false;
         }
 
-        g_evidence_desc_editor = get_new_ace_editor('evidence_description', 'evidence_desc_content', 'target_evidence_desc',
+        g_evidence_desc_editor = get_new_markdown_editor('evidence_description', 'evidence_desc_content', 'target_evidence_desc',
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");

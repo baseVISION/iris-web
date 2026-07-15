@@ -106,10 +106,6 @@ export default defineConfig(({ mode }) => {
                     },
                     // Plugins
                     {
-                        src: 'node_modules/ace-builds/src-noconflict/',
-                        dest: 'assets/js/plugin/ace/',
-                    },
-                    {
                         src: 'node_modules/bootstrap-slider/dist/bootstrap-slider.min.js',
                         dest: 'assets/js/plugin/bootstrap-slider/',
                     },

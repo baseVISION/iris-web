@@ -41,7 +41,7 @@ function add_ioc() {
              return false;
         }
 
-        g_ioc_desc_editor = get_new_ace_editor('ioc_description', 'ioc_desc_content', 'target_ioc_desc',
+        g_ioc_desc_editor = get_new_markdown_editor('ioc_description', 'ioc_desc_content', 'target_ioc_desc',
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
@@ -185,7 +185,7 @@ function edit_ioc(ioc_id) {
         }
 
         g_ioc_id = ioc_id;
-        g_ioc_desc_editor = get_new_ace_editor('ioc_description', 'ioc_desc_content', 'target_ioc_desc',
+        g_ioc_desc_editor = get_new_markdown_editor('ioc_description', 'ioc_desc_content', 'target_ioc_desc',
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");

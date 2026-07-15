@@ -15923,10 +15923,6 @@ td.dt-nowrap { white-space: nowrap }
     text-overflow: ellipsis;
 }
 
-.ace_editor {
-    border-radius: .3rem !important;
-}
-
 #protagonists_form_group {
     background-color: #f5f5f5bf;
     border-radius: 14px;

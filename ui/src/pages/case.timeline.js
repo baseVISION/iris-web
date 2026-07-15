@@ -28,7 +28,7 @@ function add_event(parent_event_id = null) {
              return false;
         }
 
-        g_event_desc_editor = get_new_ace_editor('event_description', 'event_desc_content', 'target_event_desc',
+        g_event_desc_editor = get_new_markdown_editor('event_description', 'event_desc_content', 'target_event_desc',
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
@@ -209,7 +209,7 @@ function edit_event(id) {
         }
         
         g_event_id = id;
-        g_event_desc_editor = get_new_ace_editor('event_description', 'event_desc_content', 'target_event_desc',
+        g_event_desc_editor = get_new_markdown_editor('event_description', 'event_desc_content', 'target_event_desc',
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
@@ -1373,14 +1373,13 @@ $(document).ready(function(){
 
     selector_active = false;
 
-    tm_filter = ace.edit("timeline_filtering",
+    tm_filter = create_iris_code_editor("timeline_filtering",
     {
         autoScrollEditorIntoView: true,
         minLines: 1,
         maxLines: 5
     });
-    tm_filter.setTheme("ace/theme/tomorrow");
-    tm_filter.session.setMode("ace/mode/json");
+    tm_filter.setMode("json");
     tm_filter.renderer.setShowGutter(false);
     tm_filter.setShowPrintMargin(false);
     tm_filter.renderer.setScrollMargin(10, 10);

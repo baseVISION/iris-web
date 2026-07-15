@@ -27,7 +27,7 @@ function add_task() {
              return false;
         }
         
-        g_task_desc_editor = get_new_ace_editor('task_description', 'task_desc_content', 'target_task_desc',
+        g_task_desc_editor = get_new_markdown_editor('task_description', 'task_desc_content', 'target_task_desc',
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
@@ -160,7 +160,7 @@ function edit_task(id) {
 
         g_task_id = id;
 
-        g_task_desc_editor = get_new_ace_editor('task_description', 'task_desc_content', 'target_task_desc',
+        g_task_desc_editor = get_new_markdown_editor('task_description', 'task_desc_content', 'target_task_desc',
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");

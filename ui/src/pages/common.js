@@ -836,124 +836,38 @@ function get_row_value(row, column) {
 var iClassWhiteList = ['fa-solid fa-tags','fa-solid fa-tag', 'fa-solid fa-bell', 'fa-solid fa-virus-covid text-danger mr-1',
 'fa-solid fa-file-shield text-success mr-1', 'fa-regular fa-file mr-1', 'fa-solid fa-lock text-success mr-1']
 
-function get_new_ace_editor(anchor_id, content_anchor, target_anchor, onchange_callback, do_save, readonly, live_preview) {
-    var editor = ace.edit(anchor_id);
-    if ($("#"+anchor_id).attr("data-theme") != "dark") {
-        editor.setTheme("ace/theme/tomorrow");
-    } else {
-        editor.setTheme("ace/theme/iris_night");
-    }
-    editor.session.setMode("ace/mode/markdown");
-    if (readonly !== undefined) {
-        editor.setReadOnly(readonly);
-    }
-    editor.renderer.setShowGutter(true);
-    editor.setOption("showLineNumbers", true);
-    editor.setOption("showPrintMargin", false);
-    editor.setOption("displayIndentGuides", true);
-    editor.setOption("maxLines", "Infinity");
+function get_new_markdown_editor(anchor_id, content_anchor, target_anchor, onchange_callback, do_save, readonly, live_preview) {
+    var editor = create_iris_markdown_editor(anchor_id, {readOnly: Boolean(readonly)});
     editor.setOption("minLines", "2");
-    editor.setOption("autoScrollEditorIntoView", true);
-    editor.session.setUseWrapMode(true);
-    editor.setOption("indentedSoftWrap", false);
-    editor.renderer.setScrollMargin(8, 5)
-    editor.setOption("enableBasicAutocompletion", true);
 
     if (do_save !== undefined && do_save !== null) {
-        editor.commands.addCommand({
-            name: 'save',
-            bindKey: {win: "Ctrl-S", "mac": "Cmd-S"},
-            exec: function(editor) {
-                do_save()
+        document.getElementById(anchor_id).addEventListener('keydown', function (event) {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+                event.preventDefault();
+                do_save();
             }
         });
     }
 
-    editor.commands.addCommand({
-        name: 'bold',
-        bindKey: {win: "Ctrl-B", "mac": "Cmd-B"},
-        exec: function(editor) {
-            editor.insertSnippet('**${1:$SELECTION}**');
+    const updatePreview = function () {
+        if (onchange_callback !== undefined && onchange_callback !== null) {
+            onchange_callback();
         }
-    });
-    editor.commands.addCommand({
-        name: 'italic',
-        bindKey: {win: "Ctrl-I", "mac": "Cmd-I"},
-        exec: function(editor) {
-            editor.insertSnippet('*${1:$SELECTION}*');
+        if (live_preview === false || !content_anchor || !target_anchor) {
+            return;
         }
-    });
-    editor.commands.addCommand({
-        name: 'head_1',
-        bindKey: {win: "Ctrl-Shift-1", "mac": "Cmd-Shift-1"},
-        exec: function(editor) {
-            editor.insertSnippet('# ${1:$SELECTION}');
-        }
-    });
-    editor.commands.addCommand({
-        name: 'head_2',
-        bindKey: {win: "Ctrl-Shift-2", "mac": "Cmd-Shift-2"},
-        exec: function(editor) {
-            editor.insertSnippet('## ${1:$SELECTION}');
-        }
-    });
-    editor.commands.addCommand({
-        name: 'head_3',
-        bindKey: {win: "Ctrl-Shift-3", "mac": "Cmd-Shift-3"},
-        exec: function(editor) {
-            editor.insertSnippet('### ${1:$SELECTION}');
-        }
-    });
-    editor.commands.addCommand({
-        name: 'head_4',
-        bindKey: {win: "Ctrl-Shift-4", "mac": "Cmd-Shift-4"},
-        exec: function(editor) {
-            editor.insertSnippet('#### ${1:$SELECTION}');
-        }
-    });
 
-    editor.commands.addCommand({
-        name: 'link',
-        bindKey: {win: "Ctrl-K", "mac": "Cmd-K"},
-        exec: function(editor) {
-            editor.insertSnippet('[${1:$SELECTION}](url)');
-        }
-    });
-
-    editor.commands.addCommand({
-        name: 'code',
-        bindKey: {win: "Ctrl-`", "mac": "Cmd-`"},
-        exec: function(editor) {
-            editor.insertSnippet('```${1:$SELECTION}```')
-        }
-    });
-
-    if (live_preview === undefined || live_preview === true) {
-        let textarea = $('#'+content_anchor);
-        // Remove any previous event handler
-        editor.getSession().off("change");
-
-        editor.getSession().on("change", function () {
-            if (onchange_callback !== undefined && onchange_callback !== null) {
-                onchange_callback();
-            }
-
-            textarea.text(editor.getSession().getValue());
-            let target = document.getElementById(target_anchor);
-            let converter = get_showdown_convert();
-            let html = converter.makeHtml(editor.getSession().getValue());
-            target.innerHTML = do_md_filter_xss(html);
-
-        });
-
-        textarea.text(editor.getSession().getValue());
+        let markdown = editor.getValue();
+        $('#'+content_anchor).text(markdown);
         let target = document.getElementById(target_anchor);
-        let converter = get_showdown_convert();
-        let html = converter.makeHtml(editor.getSession().getValue());
-        target.innerHTML = do_md_filter_xss(html);
+        if (target) {
+            let converter = get_showdown_convert();
+            target.innerHTML = do_md_filter_xss(converter.makeHtml(markdown));
+        }
+    };
 
-    }
-
+    editor.on("change", updatePreview);
+    updatePreview();
     return editor;
 }
 
@@ -1096,22 +1010,8 @@ function get_editor_headers(editor_instance, save, edition_btn) {
     if (save === undefined || save === null) {
         save_html = '';
     }
-    header = `
-                ${save_html}
-                <div class="btn btn-sm btn-light mr-1 " title="CTRL-B" onclick="${editor_instance}.insertSnippet`+"('**${1:$SELECTION}**');"+`${editor_instance}.focus();"><i class="fa-solid fa-bold"></i></div>
-                <div class="btn btn-sm btn-light mr-1" title="CTRL-I" onclick="${editor_instance}.insertSnippet`+"('*${1:$SELECTION}*');"+`${editor_instance}.focus();"><i class="fa-solid fa-italic"></i></div>
-                <div class="btn btn-sm btn-light mr-1" title="CTRL-SHIFT-1" onclick="${editor_instance}.insertSnippet`+"('# ${1:$SELECTION}');"+`${editor_instance}.focus();">H1</div>
-                <div class="btn btn-sm btn-light mr-1" title="CTRL-SHIFT-2" onclick="${editor_instance}.insertSnippet`+"('## ${1:$SELECTION}')"+`;${editor_instance}.focus();">H2</div>
-                <div class="btn btn-sm btn-light mr-1" title="CTRL-SHIFT-3" onclick="${editor_instance}.insertSnippet`+"('### ${1:$SELECTION}');"+`${editor_instance}.focus();">H3</div>
-                <div class="btn btn-sm btn-light mr-1" title="CTRL-SHIFT-4" onclick="${editor_instance}.insertSnippet`+"('#### ${1:$SELECTION}');"+`${editor_instance}.focus();">H4</div>
-                <div class="btn btn-sm btn-light mr-1" title="CTRL+\`" onclick="${editor_instance}.insertSnippet`+"('```${1:$SELECTION}```');"+`${editor_instance}.focus();"><i class="fa-solid fa-code"></i></div>
-                <div class="btn btn-sm btn-light mr-1" title="CTRL-K" onclick="${editor_instance}.insertSnippet`+"('[${1:$SELECTION}](URL)');"+`${editor_instance}.focus();"><i class="fa-solid fa-link"></i></div>
-                <div class="btn btn-sm btn-light mr-1" title="Insert table" onclick="${editor_instance}.insertSnippet`+"('|\\t|\\t|\\t|\\n|--|--|--|\\n|\\t|\\t|\\t|\\n|\\t|\\t|\\t|');"+`${editor_instance}.focus();"><i class="fa-solid fa-table"></i></div>
-                <div class="btn btn-sm btn-light mr-1" title="Insert bullet list" onclick="${editor_instance}.insertSnippet`+"('\\n- \\n- \\n- ');"+`${editor_instance}.focus();"><i class="fa-solid fa-list"></i></div>
-                <div class="btn btn-sm btn-light mr-1" title="Insert numbered list" onclick="${editor_instance}.insertSnippet`+"('\\n1. a  \\n2. b  \\n3. c  ');"+`${editor_instance}.focus();"><i class="fa-solid fa-list-ol"></i></div>
-                <div class="btn btn-sm btn-transparent mr-1" title="Help" onclick="get_md_helper_modal();"><i class="fa-solid fa-question-circle"></i></div>
-
-    `
+    header = `${save_html}
+              <div class="btn btn-sm btn-transparent mr-1" title="Help" onclick="get_md_helper_modal();"><i class="fa-solid fa-question-circle"></i></div>`
     return header;
 }
 

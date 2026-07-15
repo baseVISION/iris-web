@@ -14,6 +14,26 @@
     background: rgba(0, 0, 0, 0.16);
 }
 
+.iris-markdown-editor[data-theme="dark"] .milkdown {
+    --crepe-color-background: #1a2035;
+    --crepe-color-on-background: #e0e0e0;
+    --crepe-color-surface: #1f283e;
+    --crepe-color-surface-low: #151b2b;
+    --crepe-color-on-surface: #cac7c7;
+    --crepe-color-on-surface-variant: #8b92a9;
+    --crepe-color-outline: #5c6370;
+    --crepe-color-primary: #66aaff;
+    --crepe-color-secondary: #2f374b;
+    --crepe-color-on-secondary: #e0e0e0;
+    --crepe-color-inverse: #1f283e;
+    --crepe-color-on-inverse: #f0f0f0;
+    --crepe-color-inline-code: #ff7b72;
+    --crepe-color-error: #f85149;
+    --crepe-color-hover: #1f283e;
+    --crepe-color-selected: #264f78;
+    --crepe-color-inline-area: #2f374b;
+}
+
 /* Centered grip indicator so it reads as a draggable handle. */
 .milkdown .milkdown-image-block > .image-wrapper > .image-resize-handle::after {
     content: "";

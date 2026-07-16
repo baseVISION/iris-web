@@ -358,6 +358,7 @@
    The handle is two 32px .operation-item buttons with a 2px gap = 66px total,
    so we allow room for the full width plus a small margin.
    (Crepe default is 60px 120px; we keep top/right/bottom tighter.) */
+.iris-markdown-editor .milkdown .ProseMirror,
 .iris-split .milkdown .ProseMirror {
     padding: 24px 28px 24px 84px;
 }
@@ -561,6 +562,7 @@
 
     /* Reduce Crepe padding on narrow screens, but keep enough left padding
        for the 66px block handle to stay inside the clipped scroll box. */
+    .iris-markdown-editor .milkdown .ProseMirror,
     .iris-split .milkdown .ProseMirror {
         padding: 16px 20px 16px 80px;
     }

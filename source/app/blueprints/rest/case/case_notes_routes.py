@@ -16,10 +16,14 @@
 #  along with this program; if not, write to the Free Software Foundation,
 #  Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
+import io
+
 from marshmallow import ValidationError
 from datetime import datetime
 from flask import Blueprint
 from flask import request
+from flask import send_file
+from werkzeug.utils import secure_filename
 
 from app.db import db
 from app import app
@@ -60,6 +64,14 @@ from app.blueprints.responses import response_error
 from app.blueprints.responses import response_success
 
 case_notes_rest_blueprint = Blueprint('case_notes_rest', __name__)
+
+
+def _note_export_filename(title, note_id):
+    safe_title = secure_filename(title or '')
+    if safe_title.lower().endswith('.md'):
+        safe_title = safe_title[:-3]
+    safe_title = safe_title[:120].rstrip('._-') or f'note-{note_id}'
+    return f'{safe_title}.md'
 
 
 @case_notes_rest_blueprint.route('/case/notes/<int:cur_id>', methods=['GET'])
@@ -110,6 +122,28 @@ def case_note_detail(cur_id, caseid):
 
     except ValidationError as e:
         return response_error(msg="Data error", data=e.messages)
+
+
+@case_notes_rest_blueprint.route('/case/notes/<int:cur_id>/export', methods=['GET'])
+@ac_requires_case_identifier(CaseAccessLevel.read_only, CaseAccessLevel.full_access)
+@ac_api_requires()
+def case_note_export(cur_id, caseid):
+    note = get_note(cur_id)
+    if not note or note.note_case_id != caseid:
+        return response_error(msg="Invalid note ID")
+
+    content = (note.note_content or '').encode('utf-8')
+    response = send_file(
+        io.BytesIO(content),
+        mimetype='text/markdown; charset=utf-8',
+        as_attachment=True,
+        download_name=_note_export_filename(note.note_title, note.note_id),
+        max_age=0,
+    )
+    response.cache_control.no_store = True
+    response.cache_control.private = True
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
 
 
 @case_notes_rest_blueprint.route('/case/notes/delete/<int:cur_id>', methods=['POST'])

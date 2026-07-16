@@ -916,18 +916,20 @@ async function load_directories() {
         });
 }
 
-function download_note() {
-    // Use the content of whichever editor is currently active (ACE or Milkdown)
-    let content = get_active_note_markdown();
-    let filename = $('#currentNoteTitle').text() + '.md';
-    let blob = new Blob([content], {type: 'text/plain'});
-    let url = window.URL.createObjectURL(blob);
+function download_note(noteId) {
+    const activeNoteId = $('#currentNoteIDLabel').data('note_id');
+    const targetNoteId = noteId || activeNoteId;
+    if (!targetNoteId) {
+        return false;
+    }
 
-    // Create a link to the file and click it to download it
     let link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
+    link.href = `/case/notes/${encodeURIComponent(targetNoteId)}/export${case_param()}`;
+    link.hidden = true;
+    document.body.appendChild(link);
     link.click();
+    link.remove();
+    return false;
 }
 
 function add_note(directory_id) {
@@ -1344,6 +1346,14 @@ function createDirectoryListItem(directory, directoryMap) {
                     e.preventDefault();
                     copy_object_link_md('notes',note.id);
                 }));
+
+                menu.append($('<a></a>').addClass('dropdown-item').attr('href', '#')
+                    .append($('<i></i>').addClass('fa-solid fa-download mr-2'))
+                    .append(document.createTextNode('Export note'))
+                    .on('click', function (e) {
+                        e.preventDefault();
+                        download_note(note.id);
+                    }));
 
                 menu.append($('<a></a>').addClass('dropdown-item').attr('href', '#').text('Move').on('click', function (e) {
                     e.preventDefault();

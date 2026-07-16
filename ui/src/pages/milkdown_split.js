@@ -2,6 +2,7 @@ import { basicSetup } from 'codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { Compartment, EditorSelection, EditorState, Transaction } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
+import { getLargeDocumentReason } from '../lib/large_document.js';
 
 const SOURCE_SYNC_MS = 250;
 const MIN_PANE_WIDTH = 180;
@@ -112,6 +113,8 @@ class SplitEditor {
         this.sourceEditabilityCompartment = new Compartment();
         this.sourceReadOnly = false;
         this.sourceScrollFrame = null;
+        this.sourceOnlyReason = null;
+        this.sourceOnlyUiInstalled = false;
     }
 
     withOrigin(origin, fn) {
@@ -131,7 +134,8 @@ class SplitEditor {
         this.divider = resolveRef(divider);
         this.viewToggle = resolveRef(viewToggle);
         this.onChange = typeof onChange === 'function' ? onChange : null;
-        this.collabActive = !!collab;
+        this.sourceOnlyReason = getLargeDocumentReason(initialMarkdown);
+        this.collabActive = !!collab && !this.sourceOnlyReason;
 
         if (!this.container || !this.sourcePane || !this.wysiwygPane) {
             throw new Error('Missing split editor root elements');
@@ -144,43 +148,54 @@ class SplitEditor {
         wysiwygMount.innerHTML = '';
 
         this.wireSplitUi();
-        await waitForMilkdown();
-        if (this.destroyed) {
-            return this;
+        let collabOptions = null;
+        if (!this.sourceOnlyReason) {
+            await waitForMilkdown();
+            if (this.destroyed) {
+                return this;
+            }
+
+            collabOptions = this.getCollabOptions(collab);
+            try {
+                await window.IrisMilkdown.create(wysiwygMount, initialMarkdown || '', (md) => {
+                    this.handleMilkdownChange(md);
+                }, { collab: collabOptions });
+            } catch (error) {
+                console.error('Failed to initialize Milkdown; using source mode', error);
+                await destroyMilkdownIfActive();
+                this.sourceOnlyReason = 'initialization-error';
+                this.collabActive = false;
+                collabOptions = null;
+            }
+
+            if (this.destroyed) {
+                await destroyMilkdownIfActive();
+                return this;
+            }
         }
 
-        const collabOptions = this.getCollabOptions(collab);
-        try {
-            await window.IrisMilkdown.create(wysiwygMount, initialMarkdown || '', (md) => {
-                this.handleMilkdownChange(md);
-            }, { collab: collabOptions });
-        } catch (err) {
-            this.cleanupFns.forEach((fn) => fn());
-            this.cleanupFns = [];
-            throw err;
-        }
-
-        if (this.destroyed) {
-            await destroyMilkdownIfActive();
-            return this;
+        if (this.sourceOnlyReason) {
+            this.installSourceOnlyUi();
         }
 
         this.sourceReadOnly = this.computeSourceReadOnly();
+        const sourceExtensions = [
+            basicSetup,
+            this.sourceEditabilityCompartment.of(this.getSourceEditabilityExtensions(this.sourceReadOnly)),
+            EditorView.updateListener.of((update) => this.handleSourceUpdate(update)),
+            EditorView.theme({
+                '&': { height: '100%' },
+                '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
+            }),
+        ];
+        if (!this.sourceOnlyReason) {
+            sourceExtensions.splice(1, 0, markdown(), EditorView.lineWrapping);
+        }
         this.sourceView = new EditorView({
             parent: sourceMount,
             state: EditorState.create({
                 doc: initialMarkdown || '',
-                extensions: [
-                    basicSetup,
-                    markdown(),
-                    this.sourceEditabilityCompartment.of(this.getSourceEditabilityExtensions(this.sourceReadOnly)),
-                    EditorView.lineWrapping,
-                    EditorView.updateListener.of((update) => this.handleSourceUpdate(update)),
-                    EditorView.theme({
-                        '&': { height: '100%' },
-                        '.cm-scroller': { fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
-                    }),
-                ],
+                extensions: sourceExtensions,
             }),
         });
 
@@ -271,7 +286,9 @@ class SplitEditor {
         }
         const md = this.pendingSourceMd;
         this.pendingSourceMd = null;
-        this.withOrigin('source', () => window.IrisMilkdown.setMarkdown(md));
+        if (!this.sourceOnlyReason) {
+            this.withOrigin('source', () => window.IrisMilkdown.setMarkdown(md));
+        }
         this.emitChange(md);
     }
 
@@ -640,7 +657,14 @@ class SplitEditor {
 
     getMarkdown() {
         this.flush();
+        if (this.sourceOnlyReason) {
+            return this.sourceView ? this.sourceView.state.doc.toString() : '';
+        }
         return window.IrisMilkdown.getMarkdown() || '';
+    }
+
+    isSourceOnly() {
+        return !!this.sourceOnlyReason;
     }
 
     isCollabActive() {
@@ -677,7 +701,9 @@ class SplitEditor {
         const markdown = md || '';
         this.silentMarkdown = markdown;
 
-        this.withOrigin('source', () => window.IrisMilkdown.setMarkdown(markdown));
+        if (!this.sourceOnlyReason) {
+            this.withOrigin('source', () => window.IrisMilkdown.setMarkdown(markdown));
+        }
         this.withOrigin('milkdown', () => this.replaceSourceDoc(markdown));
     }
 
@@ -707,7 +733,9 @@ class SplitEditor {
             this.sourceView.destroy();
             this.sourceView = null;
         }
-        await destroyMilkdownIfActive();
+        if (!this.sourceOnlyReason) {
+            await destroyMilkdownIfActive();
+        }
     }
 
     wireSplitUi() {
@@ -715,6 +743,82 @@ class SplitEditor {
         this.wireViewToggle();
         this.wireFocusClasses();
         this.wireBreakpointReset();
+    }
+
+    installSourceOnlyUi() {
+        if (this.sourceOnlyUiInstalled || !this.container) {
+            return;
+        }
+        this.sourceOnlyUiInstalled = true;
+        const viewClasses = ['view-split', 'view-source', 'view-preview'];
+        const previousView = viewClasses.find((className) => this.container.classList.contains(className));
+        this.container.classList.remove('view-split', 'view-preview');
+        this.container.classList.add('view-source', 'is-source-only');
+        this.container.dataset.editorMode = 'source-only';
+        this.container.dataset.editorReason = this.sourceOnlyReason;
+        if (this.shell) {
+            this.shell.classList.add('is-source-only');
+        }
+
+        const buttons = this.viewToggle
+            ? Array.from(this.viewToggle.querySelectorAll('[data-view]'))
+            : [];
+        const buttonState = buttons.map((button) => ({
+            button,
+            disabled: button.disabled,
+            title: button.getAttribute('title'),
+            active: button.classList.contains('is-active'),
+            pressed: button.getAttribute('aria-pressed'),
+        }));
+        buttons.forEach((button) => {
+            const isSource = button.dataset.view === 'source';
+            button.disabled = !isSource;
+            button.classList.toggle('is-active', isSource);
+            button.setAttribute('aria-pressed', isSource ? 'true' : 'false');
+            if (!isSource) {
+                button.title = 'Preview unavailable for this document';
+            }
+        });
+
+        const status = document.createElement('span');
+        status.className = 'iris-source-only-status';
+        status.textContent = this.sourceOnlyReason === 'initialization-error'
+            ? 'Source mode'
+            : 'Large document: source mode';
+        status.title = this.sourceOnlyReason === 'initialization-error'
+            ? 'The rich editor could not be initialized'
+            : 'Rich preview is disabled automatically for this document';
+        if (this.viewToggle && this.viewToggle.parentNode) {
+            this.viewToggle.parentNode.insertBefore(status, this.viewToggle.nextSibling);
+        }
+
+        this.cleanupFns.push(() => {
+            this.container.classList.remove('is-source-only');
+            this.container.classList.remove(...viewClasses);
+            if (previousView) {
+                this.container.classList.add(previousView);
+            }
+            delete this.container.dataset.editorMode;
+            delete this.container.dataset.editorReason;
+            if (this.shell) {
+                this.shell.classList.remove('is-source-only');
+            }
+            buttonState.forEach(({ button, disabled, title, active, pressed }) => {
+                button.disabled = disabled;
+                button.classList.toggle('is-active', active);
+                if (pressed === null) {
+                    button.removeAttribute('aria-pressed');
+                } else {
+                    button.setAttribute('aria-pressed', pressed);
+                }
+                if (title === null) {
+                    button.removeAttribute('title');
+                } else {
+                    button.setAttribute('title', title);
+                }
+            });
+            status.remove();
+        });
     }
 
     wireDividerDrag() {

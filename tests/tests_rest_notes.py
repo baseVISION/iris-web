@@ -131,6 +131,50 @@ class TestsRestNotes(TestCase):
         response = self._subject.get(f'/api/v2/cases/{_IDENTIFIER_FOR_NONEXISTENT_OBJECT}/notes/{identifier}')
         self.assertEqual(404, response.status_code)
 
+    def test_export_note_should_return_original_markdown_as_attachment(self):
+        case_identifier = self._subject.create_dummy_case()
+        directory = self._subject.create(
+            f'/api/v2/cases/{case_identifier}/notes-directories',
+            {'name': 'directory_name'}
+        ).json()
+        markdown = '# Findings\n\nExact note content.\n'
+        note = self._subject.create(
+            f'/api/v2/cases/{case_identifier}/notes',
+            {
+                'directory_id': directory['id'],
+                'note_title': 'SecureDocs.ps1',
+                'note_content': markdown,
+            }
+        ).json()
+
+        response = self._subject.get(
+            f'/case/notes/{note["note_id"]}/export',
+            query_parameters={'cid': case_identifier}
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(markdown.encode('utf-8'), response.content)
+        self.assertIn('attachment', response.headers['Content-Disposition'])
+        self.assertIn('SecureDocs.ps1.md', response.headers['Content-Disposition'])
+        self.assertTrue(response.headers['Content-Type'].startswith('text/markdown'))
+        self.assertEqual('nosniff', response.headers['X-Content-Type-Options'])
+
+    def test_export_note_should_deny_user_without_case_access(self):
+        case_identifier = self._subject.create_dummy_case()
+        directory = self._subject.create(
+            f'/api/v2/cases/{case_identifier}/notes-directories',
+            {'name': 'directory_name'}
+        ).json()
+        note = self._subject.create(
+            f'/api/v2/cases/{case_identifier}/notes',
+            {'directory_id': directory['id']}
+        ).json()
+        user = self._subject.create_dummy_user()
+
+        response = user.get(f'/case/notes/{note["note_id"]}/export?cid={case_identifier}')
+
+        self.assertEqual(403, response.status_code)
+
     def test_update_note_should_return_200(self):
         case_identifier = self._subject.create_dummy_case()
         response = self._subject.create(f'/api/v2/cases/{case_identifier}/notes-directories',

@@ -474,6 +474,30 @@
     box-shadow: none;
 }
 
+.iris-view-toggle button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.iris-view-toggle button:disabled:hover {
+    background: transparent;
+    color: #5f6368;
+}
+
+.iris-source-only-status {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 10px;
+    color: #5f6368;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-source-only-status {
+    color: #8b92a9;
+}
+
 /* ---- 10. View-mode pane visibility overrides ------------------------------ */
 .iris-split.view-source > .iris-split-pane.iris-split-preview,
 .iris-split.view-preview > .iris-split-pane.iris-split-source {

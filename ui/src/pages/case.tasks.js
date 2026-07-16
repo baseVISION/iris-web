@@ -18,7 +18,7 @@ function add_task() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
                             }, null);
-        g_task_desc_editor.setOption("minLines", "10");
+        g_task_desc_editor.setOption("minLines", "6");
         $('#submit_new_task').on("click", function () {
 
             clear_api_error();

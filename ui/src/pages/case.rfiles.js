@@ -41,7 +41,7 @@ function add_modal_rfile() {
                         $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                         $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
                     }, null);
-        g_evidence_desc_editor.setOption("minLines", "10");
+        g_evidence_desc_editor.setOption("minLines", "6");
         load_evidence_type();
         
         $('#modal_add_rfiles').modal({ show: true });

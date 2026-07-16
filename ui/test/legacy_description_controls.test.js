@@ -18,7 +18,8 @@ test('case description forms use Milkdown without legacy preview controls', asyn
         );
         const script = await readFile(new URL(`ui/src/pages/${scriptName}`, root), 'utf8');
 
-        assert.doesNotMatch(template, new RegExp(`${prefix}_preview_button|icon-note`));
+        assert.doesNotMatch(template, new RegExp(`${prefix}_preview_button|icon-note|md_description_field`));
         assert.doesNotMatch(script, new RegExp(`edit_in_${prefix}_desc|preview_${prefix}_description`));
+        assert.doesNotMatch(script, new RegExp(`g_${prefix}_desc_editor\\.setOption\\("minLines", "10"\\)`));
     }
 });

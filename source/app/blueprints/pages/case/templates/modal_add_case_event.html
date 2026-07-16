@@ -79,13 +79,7 @@
                                 <div class="row">
                                     <div class="form-group mt-3 col-12">
                                         <label for="event_content" class="placeholder">Event description</label>
-                                        <div class="md_description_field">
-                                            <div class="row" style="margin-left:0px;">
-                                                <div class="col-12">
-                                                    <div id="event_description" contenteditable="true" spellcheck="true" class="mr-2" data-theme="{% if current_user.in_dark_mode %}dark{% else %}light{% endif %}">{% if event.event_content %}{{ event.event_content  }}{% endif %}</div>
-                                                </div>
-                                            </div>
-                                        </div>
+                                        <div id="event_description" contenteditable="true" spellcheck="true" data-theme="{% if current_user.in_dark_mode %}dark{% else %}light{% endif %}">{% if event.event_content %}{{ event.event_content  }}{% endif %}</div>
                                         </div>
                                     </div>
                                 </div>

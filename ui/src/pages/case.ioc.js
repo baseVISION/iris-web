@@ -33,7 +33,7 @@ function add_ioc() {
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
                             }, null);
 
-        g_ioc_desc_editor.setOption("minLines", "10");
+        g_ioc_desc_editor.setOption("minLines", "6");
         $('#submit_new_ioc').on("click", function () {
             if(!$('form#form_new_ioc').valid()) {
                 return false;
@@ -171,7 +171,7 @@ function edit_ioc(ioc_id) {
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
                             }, null);
 
-        g_ioc_desc_editor.setOption("minLines", "10");
+        g_ioc_desc_editor.setOption("minLines", "6");
 
         load_menu_mod_options_modal(ioc_id, 'ioc', $("#ioc_modal_quick_actions"));
         $('.dtr-modal').hide();

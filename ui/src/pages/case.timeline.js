@@ -20,7 +20,7 @@ function add_event(parent_event_id = null) {
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
                             }, null);
 
-        g_event_desc_editor.setOption("minLines", "10");
+        g_event_desc_editor.setOption("minLines", "6");
         let parent_selector = $('#parent_event_id');
 
         // Add empty option

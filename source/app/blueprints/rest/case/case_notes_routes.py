@@ -201,6 +201,8 @@ def case_note_collab_persist(cur_id, caseid):
             return response_error('Data error', data={'note_content': ['Missing note content']})
 
         note.note_content = request_data.get('note_content')
+        if isinstance(request_data.get('note_title'), str) and request_data.get('note_title'):
+            note.note_title = request_data.get('note_title')
         note = notes_update(iris_current_user, note)
 
         return response_success('ok', data={

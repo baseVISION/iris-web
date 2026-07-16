@@ -98,10 +98,11 @@
 									</span>
 								</button>
 								<div class="dropdown">
-									  <button class="btn bg-transparent" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="true">
+									  <button type="button" class="btn bg-transparent" id="noteQuickActionsToggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false" title="More note actions" aria-label="More note actions">
 										  <span aria-hidden="true"><i class="fas fa-ellipsis-v"></i></span>
 									  </button>
-									  <div class="dropdown-menu pull-right" id="note_quick_actions" aria-labelledby="dropdownMenuButton">
+									  <div class="dropdown-menu pull-right" id="note_quick_actions" aria-labelledby="noteQuickActionsToggle">
+										  <a class="dropdown-item" href="#" onclick="load_note_revisions();return false;"><i class="fa-solid fa-clock-rotate-left mr-2"></i>Revision history</a>
 									  </div>
 								 </div>
 						  	</div>

@@ -135,7 +135,7 @@ def case_note_export(cur_id, caseid):
     content = (note.note_content or '').encode('utf-8')
     response = send_file(
         io.BytesIO(content),
-        mimetype='text/markdown; charset=utf-8',
+        mimetype='text/markdown',
         as_attachment=True,
         download_name=_note_export_filename(note.note_title, note.note_id),
         max_age=0,

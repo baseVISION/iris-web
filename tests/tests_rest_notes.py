@@ -156,7 +156,7 @@ class TestsRestNotes(TestCase):
         self.assertEqual(markdown.encode('utf-8'), response.content)
         self.assertIn('attachment', response.headers['Content-Disposition'])
         self.assertIn('SecureDocs.ps1.md', response.headers['Content-Disposition'])
-        self.assertTrue(response.headers['Content-Type'].startswith('text/markdown'))
+        self.assertEqual('text/markdown; charset=utf-8', response.headers['Content-Type'])
         self.assertEqual('nosniff', response.headers['X-Content-Type-Options'])
 
     def test_export_note_should_deny_user_without_case_access(self):

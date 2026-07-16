@@ -4,20 +4,6 @@ var current_timeline;
 var g_event_id = null;
 var g_event_desc_editor = null;
 
-function edit_in_event_desc() {
-    if($('#container_event_desc_content').is(':visible')) {
-        $('#container_event_description').show(100);
-        $('#container_event_desc_content').hide(100);
-        $('#event_edition_btn').hide(100);
-        $('#event_preview_button').hide(100);
-    } else {
-        $('#event_preview_button').show(100);
-        $('#event_edition_btn').show(100);
-        $('#container_event_desc_content').show(100);
-        $('#container_event_description').hide(100);
-    }
-}
-
 /* Fetch a modal that allows to add an event */
 function add_event(parent_event_id = null) {
     url = 'timeline/events/add/modal' + case_param();
@@ -28,17 +14,13 @@ function add_event(parent_event_id = null) {
              return false;
         }
 
-        g_event_desc_editor = get_new_markdown_editor('event_description', 'event_desc_content', 'target_event_desc',
+        g_event_desc_editor = get_new_markdown_editor('event_description', null, null,
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
                             }, null);
 
         g_event_desc_editor.setOption("minLines", "10");
-        let headers = get_editor_headers('g_event_desc_editor', null, 'event_edition_btn');
-        $('#event_edition_btn').append(headers);
-        edit_in_event_desc();
-
         let parent_selector = $('#parent_event_id');
 
         // Add empty option
@@ -209,16 +191,12 @@ function edit_event(id) {
         }
         
         g_event_id = id;
-        g_event_desc_editor = get_new_markdown_editor('event_description', 'event_desc_content', 'target_event_desc',
+        g_event_desc_editor = get_new_markdown_editor('event_description', null, null,
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
                             }, null);
         g_event_desc_editor.setOption("minLines", "6");
-        preview_event_description(true);
-        headers = get_editor_headers('g_event_desc_editor', null, 'event_edition_btn');
-        $('#event_edition_btn').append(headers);
-        edit_in_event_desc();
 
         let parent_selector = $('#parent_event_id');
 
@@ -261,30 +239,6 @@ function edit_event(id) {
         load_menu_mod_options_modal(id, 'event', $("#event_modal_quick_actions"));
         $('#modal_add_event').modal({show:true});
   });
-}
-
-function preview_event_description(no_btn_update) {
-    if(!$('#container_event_description').is(':visible')) {
-        event_desc = g_event_desc_editor.getValue();
-        converter = get_showdown_convert();
-        html = converter.makeHtml(do_md_filter_xss(event_desc));
-        event_desc_html = do_md_filter_xss(html);
-        $('#target_event_desc').html(event_desc_html);
-        $('#container_event_description').show();
-        if (!no_btn_update) {
-            $('#event_preview_button').html('<i class="fa-solid fa-eye-slash"></i>');
-        }
-        $('#container_event_desc_content').hide();
-    }
-    else {
-        $('#container_event_description').hide();
-         if (!no_btn_update) {
-            $('#event_preview_button').html('<i class="fa-solid fa-eye"></i>');
-        }
-
-        $('#event_preview_button').html('<i class="fa-solid fa-eye"></i>');
-        $('#container_event_desc_content').show();
-    }
 }
 
 function is_timeline_compact_view() {

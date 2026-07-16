@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import gc
 import json
 import os
 import re
@@ -45,6 +47,15 @@ COLLAB_STORE_DIR = Path(
     )
 )
 COLLAB_STORE_DB = COLLAB_STORE_DIR / "yjs.sqlite3"
+
+# `gc.disable()` (see iris_engine.collab.pycrdt_worker, imported transitively via
+# the collab blueprint) is process-wide, so this ASGI process also needs its own
+# explicit collection. Safe to run directly on the event-loop thread here: unlike
+# the gunicorn worker, every pycrdt Doc/XmlFragment in this process is created and
+# torn down on the single asyncio event-loop thread (the `to_thread` calls below
+# only ever touch plain DB objects), so there is no cross-thread drop to guard
+# against with a dedicated worker thread.
+GC_INTERVAL_SECONDS = 60
 
 
 class AuthorizedRoom(NamedTuple):
@@ -99,6 +110,7 @@ class IrisCollabASGIApp:
     def __init__(self, websocket_server: WebsocketServer):
         self._websocket_server = websocket_server
         self._server_task: Task | None = None
+        self._gc_task: Task | None = None
 
     async def __call__(
         self,
@@ -141,8 +153,12 @@ class IrisCollabASGIApp:
                 COLLAB_STORE_DIR.mkdir(parents=True, exist_ok=True)
                 self._server_task = create_task(self._websocket_server.start())
                 await self._websocket_server.started.wait()
+                self._gc_task = create_task(_periodic_gc())
                 await send({"type": "lifespan.startup.complete"})
             elif message["type"] == "lifespan.shutdown":
+                if self._gc_task is not None:
+                    self._gc_task.cancel()
+                    self._gc_task = None
                 await self._websocket_server.stop()
                 if self._server_task is not None:
                     await self._server_task
@@ -181,6 +197,15 @@ class IrisCollabASGIApp:
             }
         )
         await send({"type": "http.response.body", "body": body})
+
+
+async def _periodic_gc() -> None:
+    try:
+        while True:
+            await asyncio.sleep(GC_INTERVAL_SECONDS)
+            gc.collect()
+    except asyncio.CancelledError:
+        pass
 
 
 def authorize_scope(scope: dict[str, Any]) -> AuthorizedRoom | None:

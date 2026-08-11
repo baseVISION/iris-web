@@ -33,6 +33,7 @@ between tests would break every other suite in the project.
 
 from unittest import TestCase
 from uuid import uuid4
+from html.parser import HTMLParser
 
 import pyotp
 import requests
@@ -43,6 +44,25 @@ from iris import API_URL
 
 
 _PASSWORD = 'aA.1234567890'
+
+
+class _CsrfTokenParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.token = None
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if tag == 'input' and attributes.get('name') == 'csrf_token':
+            self.token = attributes.get('value')
+
+
+def _csrf_token(response):
+    parser = _CsrfTokenParser()
+    parser.feed(response.text)
+    if not parser.token:
+        raise AssertionError('CSRF token not found in authentication form')
+    return parser.token
 
 
 def _login(username, password):
@@ -251,3 +271,63 @@ class TestsAuthMfa(TestCase):
         # surfaces verbatim to the user.
         self.assertIn('Too many MFA attempts',
                       locked.json().get('message', ''))
+
+    def test_legacy_mfa_failures_should_survive_password_reentry(self):
+        user_name, _ = self._provision_mfa_user()
+        browser = requests.Session()
+        login_url = parse.urljoin(API_URL, '/login')
+
+        login_page = browser.get(login_url)
+        password_response = browser.post(
+            login_url,
+            data={
+                'csrf_token': _csrf_token(login_page),
+                'username': user_name,
+                'password': _PASSWORD,
+            },
+            allow_redirects=False,
+        )
+        self.assertEqual(302, password_response.status_code)
+        self.assertIn('/auth/mfa-verify', password_response.headers['Location'])
+
+        challenge_url = parse.urljoin(API_URL, '/auth/mfa-verify')
+        challenge_page = browser.get(challenge_url)
+        for _ in range(3):
+            challenge_page = browser.post(
+                challenge_url,
+                data={
+                    'csrf_token': _csrf_token(challenge_page),
+                    'token': '000000',
+                },
+            )
+            self.assertIn('Invalid token', challenge_page.text)
+
+        login_page = browser.get(login_url)
+        password_response = browser.post(
+            login_url,
+            data={
+                'csrf_token': _csrf_token(login_page),
+                'username': user_name,
+                'password': _PASSWORD,
+            },
+        )
+        self.assertIn('Verify MFA', password_response.text)
+
+        challenge_page = password_response
+        challenge_page = browser.post(
+            challenge_url,
+            data={
+                'csrf_token': _csrf_token(challenge_page),
+                'token': '000000',
+            },
+        )
+        self.assertIn('Invalid token', challenge_page.text)
+
+        locked_page = browser.post(
+            challenge_url,
+            data={
+                'csrf_token': _csrf_token(challenge_page),
+                'token': '000000',
+            },
+        )
+        self.assertIn('Too many attempts. Please try again later.', locked_page.text)

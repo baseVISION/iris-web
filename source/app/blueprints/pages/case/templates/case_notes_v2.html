@@ -1,7 +1,6 @@
 {% extends "layouts/default_ext.html" %} {% block title %} Case notes {% endblock title %} {% block stylesheets %}
 {% include 'includes/header_case.html' %}
 <link rel="stylesheet" href="/static/assets/css/bootstrap-select.min.css">
-<link rel="stylesheet" href="/static/assets/css/milkdown_editor.css">
 {% endblock stylesheets %}
 {% block content %}
 {% include 'includes/navigation_ext.html' %}
@@ -88,7 +87,7 @@
 										<i class="fa-brands fa-markdown mr-2"></i>
 									</span>
 								</button>
-								<button type="button" class="btn bg-transparent btn-xs" onclick="download_note();return false;" title="Download as MD">
+								<button type="button" class="btn bg-transparent btn-xs" onclick="download_note();return false;" title="Export note as Markdown" aria-label="Export note as Markdown">
 									<span class="btn-label">
 										<i class="fa-solid fa-download mr-2"></i>
 									</span>
@@ -98,13 +97,6 @@
 										<i class="fa-solid fa-trash mr-2 text-danger"></i>
 									</span>
 								</button>
-								<div class="dropdown">
-									  <button class="btn bg-transparent" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="true">
-										  <span aria-hidden="true"><i class="fas fa-ellipsis-v"></i></span>
-									  </button>
-									  <div class="dropdown-menu pull-right" id="note_quick_actions" aria-labelledby="dropdownMenuButton">
-									  </div>
-								 </div>
 						  	</div>
 						</div>
 					</div>

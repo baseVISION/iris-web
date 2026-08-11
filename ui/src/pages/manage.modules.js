@@ -277,7 +277,7 @@ function update_param(module_id, param_name) {
         $('#submit_save_parameter').on("click", function () {
             var data = Object();
             if ($('#editor_detail').length != 0) {
-                editor = ace.edit("editor_detail");
+                let editor = get_iris_editor("editor_detail");
                 data['parameter_value'] = editor.getSession().getValue();
                 data['csrf_token'] = $('#csrf_token').val();
             } else {

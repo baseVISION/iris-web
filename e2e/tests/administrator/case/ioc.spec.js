@@ -13,14 +13,17 @@ test.beforeEach(async({ page }) => {
 
 test('should be able to update IOC', async ({ page }) => {
     const iocValue = `IOC value - ${crypto.randomUUID()}`;
+    const iocDescription = `IOC description - ${crypto.randomUUID()}`;
 
     await page.getByRole('button', { name: 'Add IOC' }).click();
     await page.getByRole('button', { name: 'None' }).click();
     await page.getByRole('listbox').getByRole('option', { name: 'AS', exact: true }).click();
     await page.getByLabel('IOC Value *').fill(iocValue);
+    await page.locator('#ioc_description .ProseMirror').fill(iocDescription);
     await page.getByRole('button', { name: 'Save' }).click();
 
     await page.getByRole('link', { name: iocValue }).click();
+    await expect(page.locator('#ioc_description .ProseMirror')).toContainText(iocDescription);
     const newIocValue = `IOC value - ${crypto.randomUUID()}`;
     await page.getByLabel('IOC Value *').fill(newIocValue);
     await page.getByRole('button', { name: 'Update' }).click();

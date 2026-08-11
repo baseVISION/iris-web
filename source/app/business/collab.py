@@ -39,6 +39,7 @@ from app.business.access_controls import ac_fast_check_user_has_case_access
 from app.db import db
 from app.iris_engine.collab.render import markdown_to_ydoc_update
 from app.iris_engine.collab.render import ydoc_update_to_markdown
+from app.iris_engine.collab.pycrdt_worker import run as _run_on_pycrdt_thread
 from app.iris_engine.utils.tracker import track_activity
 from app.models.authorization import CaseAccessLevel
 from app.models.authorization import WarRoomAccessLevel
@@ -259,7 +260,7 @@ def ensure_snapshot(doc_name, current_content):
     # it would leave users unable to see content they know is in
     # `note.note_content` / `case.description` / etc.
     seed_md = current_content or ''
-    seed_bytes = markdown_to_ydoc_update(seed_md)
+    seed_bytes = _run_on_pycrdt_thread(markdown_to_ydoc_update, seed_md)
 
     if row is None:
         row = CollabDoc(
@@ -312,7 +313,12 @@ def apply_wire_update(doc_name, update_b64, user_id):
         # combining update blobs without needing to materialise a full
         # Doc — much cheaper than apply+get_update on hot paths. It's
         # a variadic (not a list), hence the star-splat.
-        new_state = merge_updates(bytes(row.y_state), update_bytes)
+        #
+        # Routed through the dedicated pycrdt worker thread: see
+        # `iris_engine.collab.pycrdt_worker` for why — the transient
+        # Doc/Subscription objects merge_updates allocates internally
+        # are `!Send` and must not be GC'd off-thread.
+        new_state = _run_on_pycrdt_thread(merge_updates, bytes(row.y_state), update_bytes)
     except Exception:
         # Malformed update — drop it. Peers won't see the broadcast
         # either (caller checks the return value).
@@ -348,7 +354,7 @@ def flush_to_source(doc_name):
         return
 
     try:
-        new_content = ydoc_update_to_markdown(bytes(row.y_state))
+        new_content = _run_on_pycrdt_thread(ydoc_update_to_markdown, bytes(row.y_state))
     except Exception:
         # Never let a bad snapshot break the audit path — keep the
         # source column as-is until a subsequent flush succeeds.

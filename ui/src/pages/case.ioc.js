@@ -7,20 +7,6 @@ function reload_iocs() {
     get_case_ioc();
 }
 
-function edit_in_ioc_desc() {
-    if($('#container_ioc_desc_content').is(':visible')) {
-        $('#container_ioc_description').show(100);
-        $('#container_ioc_desc_content').hide(100);
-        $('#ioc_edition_btn').hide(100);
-        $('#ioc_preview_button').hide(100);
-    } else {
-        $('#ioc_preview_button').show(100);
-        $('#ioc_edition_btn').show(100);
-        $('#container_ioc_desc_content').show(100);
-        $('#container_ioc_description').hide(100);
-    }
-}
-
 function _parse_ioc_values() {
     const ioc_value = $('#ioc_value').val();
     if (!$('#ioc_one_per_line').is(':checked')) {
@@ -41,19 +27,13 @@ function add_ioc() {
              return false;
         }
 
-        g_ioc_desc_editor = get_new_ace_editor('ioc_description', 'ioc_desc_content', 'target_ioc_desc',
+        g_ioc_desc_editor = get_new_markdown_editor('ioc_description', null, null,
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
                             }, null);
 
-        g_ioc_desc_editor.setOption("minLines", "10");
-        edit_in_ioc_desc();
-
-        headers = get_editor_headers('g_ioc_desc_editor', null, 'ioc_edition_btn');
-        $('#ioc_edition_btn').append(headers);
-
-
+        g_ioc_desc_editor.setOption("minLines", "6");
         $('#submit_new_ioc').on("click", function () {
             if(!$('form#form_new_ioc').valid()) {
                 return false;
@@ -185,47 +165,19 @@ function edit_ioc(ioc_id) {
         }
 
         g_ioc_id = ioc_id;
-        g_ioc_desc_editor = get_new_ace_editor('ioc_description', 'ioc_desc_content', 'target_ioc_desc',
+        g_ioc_desc_editor = get_new_markdown_editor('ioc_description', null, null,
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
-                            }, null, false, false);
+                            }, null);
 
-        g_ioc_desc_editor.setOption("minLines", "10");
-        preview_ioc_description(true);
-        headers = get_editor_headers('g_ioc_desc_editor', null, 'ioc_edition_btn');
-        $('#ioc_edition_btn').append(headers);
+        g_ioc_desc_editor.setOption("minLines", "6");
 
         load_menu_mod_options_modal(ioc_id, 'ioc', $("#ioc_modal_quick_actions"));
         $('.dtr-modal').hide();
         $('#modal_add_ioc').modal({ show: true });
-        edit_in_ioc_desc();
     });
 
-}
-
-function preview_ioc_description(no_btn_update) {
-    if(!$('#container_ioc_description').is(':visible')) {
-        ioc_desc = g_ioc_desc_editor.getValue();
-        converter = get_showdown_convert();
-        html = converter.makeHtml(do_md_filter_xss(ioc_desc));
-        ioc_desc_html = do_md_filter_xss(html);
-        $('#target_ioc_desc').html(ioc_desc_html);
-        $('#container_ioc_description').show();
-        if (!no_btn_update) {
-            $('#ioc_preview_button').html('<i class="fa-solid fa-eye-slash"></i>');
-        }
-        $('#container_ioc_desc_content').hide();
-    }
-    else {
-        $('#container_ioc_description').hide();
-         if (!no_btn_update) {
-            $('#ioc_preview_button').html('<i class="fa-solid fa-eye"></i>');
-        }
-
-        $('#ioc_preview_button').html('<i class="fa-solid fa-eye"></i>');
-        $('#container_ioc_desc_content').show();
-    }
 }
 
 function update_ioc(ioc_id) {

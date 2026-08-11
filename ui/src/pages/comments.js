@@ -21,7 +21,7 @@ function comment_element(element_id, element_type, is_alert=false) {
 
             $('#modal_comment').modal('show');
 
-            g_comment_desc_editor = get_new_ace_editor('comment_message', 'comment_content', 'target_comment_content',
+            g_comment_desc_editor = get_new_markdown_editor('comment_message', 'comment_content', 'target_comment_content',
                         function() {
                             $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                             $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");

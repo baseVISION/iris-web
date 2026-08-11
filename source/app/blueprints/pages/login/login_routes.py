@@ -46,7 +46,7 @@ from app.business.auth import wrap_login_user
 from app.datamgmt.manage.manage_users_db import create_user
 from app.datamgmt.manage.manage_users_db import update_user_groups
 from app.datamgmt.manage.manage_users_db import get_user
-from app.forms import LoginForm, MFASetupForm
+from app.forms import LoginForm, MFASetupForm, MFAVerifyForm
 from app.blueprints.iris_user import iris_current_user
 from app.iris_engine.utils.tracker import track_activity
 from app.datamgmt.manage.manage_groups_db import get_groups_list
@@ -154,8 +154,7 @@ if app.config.get("AUTHENTICATION_TYPE") in ["local", "ldap", "oidc"]:
 
         form = LoginForm(request.form)
 
-        # check if both http method is POST and form is valid on submit
-        if not form.is_submitted() and not form.validate():
+        if not form.validate_on_submit():
             return _render_template_login(form, None)
 
         # assign form data to variables
@@ -406,20 +405,27 @@ def _clear_pre_mfa_state(preserve_lockout=False):
     session.pop("pending_mfa_secret", None)
     if not preserve_lockout:
         session.pop("mfa_fail_count", None)
+        session.pop("mfa_fail_user_id", None)
         session.pop("mfa_lockout_until", None)
 
 
-def _mfa_is_locked_out():
+def _mfa_is_locked_out(user):
+    if session.get("mfa_fail_user_id") != user.id:
+        return False
     locked_until = session.get("mfa_lockout_until")
     if locked_until and locked_until > time.time():
         return True
     if locked_until and locked_until <= time.time():
         session.pop("mfa_lockout_until", None)
+        session.pop("mfa_fail_user_id", None)
         session["mfa_fail_count"] = 0
     return False
 
 
 def _register_mfa_failure(user, reason):
+    if session.get("mfa_fail_user_id") != user.id:
+        session["mfa_fail_count"] = 0
+    session["mfa_fail_user_id"] = user.id
     session["mfa_fail_count"] = session.get("mfa_fail_count", 0) + 1
     track_activity(
         f"Failed MFA {reason} for user {user.user} "
@@ -433,6 +439,8 @@ def _register_mfa_failure(user, reason):
         # the lockout timestamp so a fresh /login cannot wipe it.
         _clear_pre_mfa_state(preserve_lockout=True)
         session.pop("username", None)
+        return True
+    return False
 
 
 @app.route("/auth/mfa-setup", methods=["GET", "POST"])
@@ -449,13 +457,13 @@ def mfa_setup():
     if user.mfa_setup_complete and user.mfa_secrets:
         return redirect(url_for("mfa_verify"))
 
-    if _mfa_is_locked_out():
+    if _mfa_is_locked_out(user):
         flash("Too many attempts. Please try again later.", "danger")
         return redirect(url_for("login.login"))
 
     form = MFASetupForm()
 
-    if form.submit() and form.validate():
+    if form.validate_on_submit():
 
         token = form.token.data
         user_password = form.user_password.data
@@ -469,7 +477,7 @@ def mfa_setup():
 
         totp = pyotp.TOTP(mfa_secret)
 
-        if totp.verify(token):
+        if totp.verify(str(token).strip(), valid_window=1):
             has_valid_password = False
             if is_authentication_ldap() is True:
                 if validate_ldap_login(
@@ -483,7 +491,10 @@ def mfa_setup():
                 has_valid_password = True
 
             if not has_valid_password:
-                _register_mfa_failure(user, "setup (invalid password)")
+                locked_out = _register_mfa_failure(user, "setup (invalid password)")
+                if locked_out:
+                    flash("Too many attempts. Please try again later.", "danger")
+                    return redirect(url_for("login.login"))
                 flash("Invalid password. Please try again.", "danger")
                 return render_template("mfa_setup.html", form=form)
 
@@ -501,7 +512,10 @@ def mfa_setup():
             session["mfa_verified_for_user_id"] = user.id
             _clear_pre_mfa_state()
             return wrap_login_user(user)
-        _register_mfa_failure(user, "setup (invalid token)")
+        locked_out = _register_mfa_failure(user, "setup (invalid token)")
+        if locked_out:
+            flash("Too many attempts. Please try again later.", "danger")
+            return redirect(url_for("login.login"))
         flash("Invalid token or password. Please try again.", "danger")
 
     # Generate a fresh secret on every GET and stash it in the session. The
@@ -536,21 +550,16 @@ def mfa_verify():
         )
         return redirect(url_for("mfa_setup"))
 
-    if _mfa_is_locked_out():
+    if _mfa_is_locked_out(user):
         flash("Too many attempts. Please try again later.", "danger")
         return redirect(url_for("login.login"))
 
-    form = MFASetupForm()
-    form.user_password.data = "not required for verification"
+    form = MFAVerifyForm()
 
-    if form.submit() and form.validate():
+    if form.validate_on_submit():
         token = form.token.data
-        if not token:
-            flash("Token is required.", "danger")
-            return render_template("mfa_verify.html", form=form)
-
         totp = pyotp.TOTP(user.mfa_secrets)
-        if totp.verify(token):
+        if totp.verify(str(token).strip(), valid_window=1):
             track_activity(
                 f"MFA verification successful for user {user.user}",
                 ctx_less=True, display_in_ui=False,
@@ -561,7 +570,10 @@ def mfa_verify():
             session["mfa_verified_for_user_id"] = user.id
             _clear_pre_mfa_state()
             return wrap_login_user(user)
-        _register_mfa_failure(user, "verification (invalid token)")
+        locked_out = _register_mfa_failure(user, "verification (invalid token)")
+        if locked_out:
+            flash("Too many attempts. Please try again later.", "danger")
+            return redirect(url_for("login.login"))
         flash("Invalid token. Please try again.", "danger")
 
     return render_template("mfa_verify.html", form=form)

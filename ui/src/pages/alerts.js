@@ -1587,10 +1587,12 @@ function resetSavedFilters(queryParams = null, replaceState = true) {
 
 
 function showEnrichment(enrichment) {
-    const ace = get_new_ace_editor('enrichmentData', null,
-        null, null, null, true, false);
-    ace.session.setMode("ace/mode/json");
-    ace.setValue(JSON.stringify(enrichment, null, 4), -1);
+    const enrichmentEditor = create_iris_code_editor('enrichmentData', {
+        minLines: 8,
+        readOnly: true,
+    });
+    enrichmentEditor.setMode("json");
+    enrichmentEditor.setValue(JSON.stringify(enrichment, null, 4));
 }
 
 function delete_alert(alert_id) {
@@ -2139,13 +2141,8 @@ $(document).ready(function () {
         });
       }
 
-    editor = ace.edit('custom_conditions');
-    if ($("#custom_conditions").attr("data-theme") != "dark") {
-        editor.setTheme("ace/theme/tomorrow");
-    } else {
-        editor.setTheme("ace/theme/iris_night");
-    }
-    editor.session.setMode("ace/mode/json");
+    editor = create_iris_code_editor('custom_conditions');
+    editor.setMode("json");
     editor.renderer.setShowGutter(true);
     editor.setOption("showLineNumbers", true);
     editor.setOption("showPrintMargin", false);
@@ -2160,9 +2157,6 @@ $(document).ready(function () {
 
     editor.setOption("enableBasicAutocompletion", true);
     editor.setOption("enableLiveAutocompletion", true);
-
-        // Use the langTools from ACE for autocompletion
-        let langTools = ace.require("ace/ext/language_tools");
 
         // Define a custom completer
         let customCompleter = {
@@ -2204,8 +2198,7 @@ $(document).ready(function () {
             }
         };
 
-        // Add the custom completer to ACE
-        langTools.addCompleter(customCompleter);
+        editor.setCompletions([customCompleter]);
 
     fetchSavedFilters()
         .then(() => {

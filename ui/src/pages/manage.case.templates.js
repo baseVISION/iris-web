@@ -6,13 +6,12 @@ function add_case_template() {
              return false;
         }
 
-        let editor = ace.edit("editor_detail",
+        let editor = create_iris_code_editor("editor_detail",
             {
                 autoScrollEditorIntoView: true,
                 minLines: 30,
             });
-        editor.setTheme("ace/theme/tomorrow");
-        editor.session.setMode("ace/mode/json");
+        editor.setMode("json");
         editor.renderer.setShowGutter(true);
         editor.setOption("showLineNumbers", true);
         editor.setOption("showPrintMargin", false);
@@ -170,13 +169,12 @@ function case_template_detail(ctempl_id) {
              return false;
         }
 
-        let editor = ace.edit("editor_detail",
+        let editor = create_iris_code_editor("editor_detail",
             {
                 autoScrollEditorIntoView: true,
                 minLines: 30,
             });
-        editor.setTheme("ace/theme/tomorrow");
-        editor.session.setMode("ace/mode/json");
+        editor.setMode("json");
         editor.renderer.setShowGutter(true);
         editor.setOption("showLineNumbers", true);
         editor.setOption("showPrintMargin", false);
@@ -328,7 +326,10 @@ function upload_case_template() {
 
 function downloadCaseTemplateDefinition() {
     event.preventDefault();
-    let editor = ace.edit("editor_detail");
+    let editor = get_iris_editor("editor_detail");
+    if (!editor) {
+        return;
+    }
     let data = editor.getSession().getValue();
 
     let filename = "case_template.json";

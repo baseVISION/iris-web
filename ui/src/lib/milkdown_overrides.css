@@ -14,6 +14,26 @@
     background: rgba(0, 0, 0, 0.16);
 }
 
+.iris-markdown-editor[data-theme="dark"] .milkdown {
+    --crepe-color-background: #1a2035;
+    --crepe-color-on-background: #e0e0e0;
+    --crepe-color-surface: #1f283e;
+    --crepe-color-surface-low: #151b2b;
+    --crepe-color-on-surface: #cac7c7;
+    --crepe-color-on-surface-variant: #8b92a9;
+    --crepe-color-outline: #5c6370;
+    --crepe-color-primary: #66aaff;
+    --crepe-color-secondary: #2f374b;
+    --crepe-color-on-secondary: #e0e0e0;
+    --crepe-color-inverse: #1f283e;
+    --crepe-color-on-inverse: #f0f0f0;
+    --crepe-color-inline-code: #ff7b72;
+    --crepe-color-error: #f85149;
+    --crepe-color-hover: #1f283e;
+    --crepe-color-selected: #264f78;
+    --crepe-color-inline-area: #2f374b;
+}
+
 /* Centered grip indicator so it reads as a draggable handle. */
 .milkdown .milkdown-image-block > .image-wrapper > .image-resize-handle::after {
     content: "";
@@ -338,6 +358,7 @@
    The handle is two 32px .operation-item buttons with a 2px gap = 66px total,
    so we allow room for the full width plus a small margin.
    (Crepe default is 60px 120px; we keep top/right/bottom tighter.) */
+.iris-markdown-editor .milkdown .ProseMirror,
 .iris-split .milkdown .ProseMirror {
     padding: 24px 28px 24px 84px;
 }
@@ -454,6 +475,30 @@
     box-shadow: none;
 }
 
+.iris-view-toggle button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.iris-view-toggle button:disabled:hover {
+    background: transparent;
+    color: #5f6368;
+}
+
+.iris-source-only-status {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 10px;
+    color: #5f6368;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.iris-split-shell[data-theme="dark"] .iris-source-only-status {
+    color: #8b92a9;
+}
+
 /* ---- 10. View-mode pane visibility overrides ------------------------------ */
 .iris-split.view-source > .iris-split-pane.iris-split-preview,
 .iris-split.view-preview > .iris-split-pane.iris-split-source {
@@ -517,6 +562,7 @@
 
     /* Reduce Crepe padding on narrow screens, but keep enough left padding
        for the 66px block handle to stay inside the clipped scroll box. */
+    .iris-markdown-editor .milkdown .ProseMirror,
     .iris-split .milkdown .ProseMirror {
         padding: 16px 20px 16px 80px;
     }

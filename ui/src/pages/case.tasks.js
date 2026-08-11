@@ -2,20 +2,6 @@ var current_users_list = [];
 var g_task_id = null;
 var g_task_desc_editor = null;
 
-function edit_in_task_desc() {
-    if($('#container_task_desc_content').is(':visible')) {
-        $('#container_task_description').show(100);
-        $('#container_task_desc_content').hide(100);
-        $('#task_edition_btn').hide(100);
-        $('#task_preview_button').hide(100);
-    } else {
-        $('#task_preview_button').show(100);
-        $('#task_edition_btn').show(100);
-        $('#container_task_desc_content').show(100);
-        $('#container_task_description').hide(100);
-    }
-}
-
 
 /* Fetch a modal that allows to add an event */
 function add_task() {
@@ -27,17 +13,12 @@ function add_task() {
              return false;
         }
         
-        g_task_desc_editor = get_new_ace_editor('task_description', 'task_desc_content', 'target_task_desc',
+        g_task_desc_editor = get_new_markdown_editor('task_description', null, null,
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
                             }, null);
-        g_task_desc_editor.setOption("minLines", "10");
-        edit_in_task_desc();
-
-        headers = get_editor_headers('g_task_desc_editor', null, 'task_edition_btn');
-        $('#task_edition_btn').append(headers);
-
+        g_task_desc_editor.setOption("minLines", "6");
         $('#submit_new_task').on("click", function () {
 
             clear_api_error();
@@ -160,46 +141,17 @@ function edit_task(id) {
 
         g_task_id = id;
 
-        g_task_desc_editor = get_new_ace_editor('task_description', 'task_desc_content', 'target_task_desc',
+        g_task_desc_editor = get_new_markdown_editor('task_description', null, null,
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
                             }, null);
 
         g_task_desc_editor.setOption("minLines", "6");
-        preview_task_description(true);
-
-        headers = get_editor_headers('g_task_desc_editor', null, 'task_edition_btn');
-        $('#task_edition_btn').append(headers);
 
         load_menu_mod_options_modal(id, 'task', $("#task_modal_quick_actions"));
         $('#modal_add_task').modal({show:true});
-        edit_in_task_desc();
   });
-}
-
-function preview_task_description(no_btn_update) {
-    if(!$('#container_task_description').is(':visible')) {
-        task_desc = g_task_desc_editor.getValue();
-        converter = get_showdown_convert();
-        html = converter.makeHtml(do_md_filter_xss(task_desc));
-        task_desc_html = do_md_filter_xss(html);
-        $('#target_task_desc').html(task_desc_html);
-        $('#container_task_description').show();
-        if (!no_btn_update) {
-            $('#task_preview_button').html('<i class="fa-solid fa-eye-slash"></i>');
-        }
-        $('#container_task_desc_content').hide();
-    }
-    else {
-        $('#container_task_description').hide();
-         if (!no_btn_update) {
-            $('#task_preview_button').html('<i class="fa-solid fa-eye"></i>');
-        }
-
-        $('#task_preview_button').html('<i class="fa-solid fa-eye"></i>');
-        $('#container_task_desc_content').show();
-    }
 }
 
 /* Fetch and draw the tasks */

@@ -6,20 +6,6 @@ function reload_rfiles(notify) {
     }
 }
 
-function edit_in_evidence_desc() {
-    if($('#container_evidence_desc_content').is(':visible')) {
-        $('#container_evidence_description').show(100);
-        $('#container_evidence_desc_content').hide(100);
-        $('#evidence_edition_btn').hide(100);
-        $('#evidence_preview_button').hide(100);
-    } else {
-        $('#evidence_preview_button').show(100);
-        $('#evidence_edition_btn').show(100);
-        $('#container_evidence_desc_content').show(100);
-        $('#container_evidence_description').hide(100);
-    }
-}
-
 function get_hash() {
     if (document.getElementById("input_autofill").files[0] === undefined) {
         $('#btn_rfile_proc').text("Please select a file");
@@ -50,17 +36,12 @@ function add_modal_rfile() {
              return false;
         }
 
-        g_evidence_desc_editor = get_new_ace_editor('evidence_description', 'evidence_desc_content', 'target_evidence_desc',
+        g_evidence_desc_editor = get_new_markdown_editor('evidence_description', null, null,
                     function() {
                         $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                         $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
                     }, null);
-        g_evidence_desc_editor.setOption("minLines", "10");
-        edit_in_evidence_desc();
-
-        let headers = get_editor_headers('g_evidence_desc_editor', null, 'evidence_edition_btn');
-        $('#evidence_edition_btn').append(headers);
-
+        g_evidence_desc_editor.setOption("minLines", "6");
         load_evidence_type();
         
         $('#modal_add_rfiles').modal({ show: true });
@@ -207,7 +188,7 @@ function edit_rfiles(rfiles_id) {
              return false;
         }
 
-        g_evidence_desc_editor = get_new_ace_editor('evidence_description', 'evidence_desc_content', 'target_evidence_desc',
+        g_evidence_desc_editor = get_new_markdown_editor('evidence_description', null, null,
                             function() {
                                 $('#last_saved').addClass('btn-danger').removeClass('btn-success');
                                 $('#last_saved > i').attr('class', "fa-solid fa-file-circle-exclamation");
@@ -215,10 +196,6 @@ function edit_rfiles(rfiles_id) {
                             }, null);
 
         g_evidence_desc_editor.setOption("minLines", "6");
-        preview_evidence_description(true);
-
-        let headers = get_editor_headers('g_evidence_desc_editor', null, 'evidence_edition_btn');
-        $('#evidence_edition_btn').append(headers);
         
         load_menu_mod_options_modal(rfiles_id, 'evidence', $("#evidence_modal_quick_actions"));
 
@@ -226,7 +203,6 @@ function edit_rfiles(rfiles_id) {
         
         $('#modal_add_rfiles').modal({ show: true });
 
-        edit_in_evidence_desc();
     });
 }
 
@@ -289,30 +265,6 @@ function load_evidence_type() {
             }
         }
     })
-}
-
-function preview_evidence_description(no_btn_update) {
-    if(!$('#container_evidence_description').is(':visible')) {
-        evidence_desc = g_evidence_desc_editor.getValue();
-        converter = get_showdown_convert();
-        html = converter.makeHtml(do_md_filter_xss(evidence_desc));
-        evidence_desc_html = do_md_filter_xss(html);
-        $('#target_evidence_desc').html(evidence_desc_html);
-        $('#container_evidence_description').show();
-        if (!no_btn_update) {
-            $('#evidence_preview_button').html('<i class="fa-solid fa-eye-slash"></i>');
-        }
-        $('#container_evidence_desc_content').hide();
-    }
-    else {
-        $('#container_evidence_description').hide();
-         if (!no_btn_update) {
-            $('#evidence_preview_button').html('<i class="fa-solid fa-eye"></i>');
-        }
-
-        $('#evidence_preview_button').html('<i class="fa-solid fa-eye"></i>');
-        $('#container_evidence_desc_content').show();
-    }
 }
 
 /* Update an rfiles */

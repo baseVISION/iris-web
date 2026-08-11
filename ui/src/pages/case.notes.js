@@ -1,6 +1,7 @@
 /* Defines the kanban board */
 
 let note_split;
+let note_detail_token = 0;
 let session_id = null ;
 let collaborator = null ;
 let collaborator_socket = null ;
@@ -56,6 +57,7 @@ function reset_note_collab_state(markdown) {
 function note_collab_payload(markdown) {
     return {
         csrf_token: $('#csrf_token').val(),
+        note_title: $('#currentNoteTitle').text() ? $('#currentNoteTitle').text() : $('#currentNoteTitleInput').val(),
         note_content: markdown || '',
         client_hash: window.IrisCollabSession.hashContent(markdown || ''),
     };
@@ -611,10 +613,26 @@ function wait_for_split_editor() {
 }
 
 async function note_detail(id) {
+    // A click on a note re-enters this function while a previous call is
+    // still mid-flight (awaiting collab flush, editor creation, ...). Without
+    // a guard, two overlapping calls both pass the `if (note_split)` teardown
+    // check before either nulls it out, both create a fresh SplitEditor, and
+    // whichever resolves last silently overwrites `note_split` -- orphaning
+    // the loser's instance (its collab websocket, DOM nodes incl. the "Live
+    // view" badge, which is appended outside the pane container that gets
+    // cleared on the next create()) with no destroy() ever called on it.
+    // Bumping this token and checking it after every await lets a superseded
+    // call detect it lost the race and destroy anything it already created
+    // instead of publishing it to the shared `note_split` variable.
+    const token = ++note_detail_token;
 
     get_request_api(`/case/notes/${id}`)
     .done(async (data) => {
         if (data.status === 'success') {
+            if (token !== note_detail_token) {
+                return false;
+            }
+
             let previous_note_id = $('#currentNoteIDLabel').data('note_id');
 
             if (timer) {
@@ -629,9 +647,18 @@ async function note_detail(id) {
                 } else if (note_dirty && previous_note_id) {
                     silent_save_note(previous_note_id, previous_note_markdown);
                 }
+                if (token !== note_detail_token) {
+                    // A newer call already owns teardown/creation; don't
+                    // race destroy() on the same instance from two callers.
+                    return false;
+                }
                 await note_split.destroy();
                 note_split = null;
                 note_dirty = false;
+            }
+
+            if (token !== note_detail_token) {
+                return false;
             }
 
             if (collaborator !== null) {
@@ -642,6 +669,9 @@ async function note_detail(id) {
             collaborator = null;
 
             await wait_for_split_editor();
+            if (token !== note_detail_token) {
+                return false;
+            }
 
             $('#currentNoteTitle').text(data.data.note_title);
             previousNoteTitle = data.data.note_title;
@@ -667,18 +697,19 @@ async function note_detail(id) {
                     },
                 },
             };
+            let created_split;
             try {
-                note_split = await window.IrisSplitEditor.create(split_options);
+                created_split = await window.IrisSplitEditor.create(split_options);
             } catch (collab_error) {
                 delete split_options.collab;
-                note_split = await window.IrisSplitEditor.create(split_options);
+                created_split = await window.IrisSplitEditor.create(split_options);
             }
 
-            if (note_id !== target_note) {
-                await note_split.destroy();
-                note_split = null;
+            if (token !== note_detail_token || note_id !== target_note) {
+                await created_split.destroy();
                 return false;
             }
+            note_split = created_split;
 
             note_split.focus();
             if (!is_note_collab_active()) {
@@ -799,12 +830,21 @@ function save_note() {
             note_collab_persist_timer = null;
         }
         const md = get_active_note_markdown();
+        const currentNoteTitle = $('#currentNoteTitle').text() ? $('#currentNoteTitle').text() : $('#currentNoteTitleInput').val();
+        const titleChanged = previousNoteTitle !== currentNoteTitle;
         $('#btn_save_note').text("Snapshotting").removeClass('btn-success btn-danger').addClass('btn-warning');
-        note_collab_persist_and_snapshot(n_id, md, { forceSnapshot: true })
+        note_collab_persist_and_snapshot(n_id, md, { forcePersist: titleChanged, forceSnapshot: true })
             .then((result) => {
                 notify_success(result.revision_created
                     ? 'Note snapshot created.'
                     : 'Note already matches latest snapshot.');
+                if (titleChanged) {
+                    load_directories().then(function() {
+                        $('.note').removeClass('note-highlight');
+                        $('#note-' + n_id).addClass('note-highlight');
+                    });
+                    previousNoteTitle = currentNoteTitle;
+                }
             })
             .catch(() => {
                 $('#btn_save_note').text("Snapshot error").removeClass('btn-success btn-warning').addClass('btn-danger');
@@ -886,18 +926,20 @@ async function load_directories() {
         });
 }
 
-function download_note() {
-    // Use the content of whichever editor is currently active (ACE or Milkdown)
-    let content = get_active_note_markdown();
-    let filename = $('#currentNoteTitle').text() + '.md';
-    let blob = new Blob([content], {type: 'text/plain'});
-    let url = window.URL.createObjectURL(blob);
+function download_note(noteId) {
+    const activeNoteId = $('#currentNoteIDLabel').data('note_id');
+    const targetNoteId = noteId || activeNoteId;
+    if (!targetNoteId) {
+        return false;
+    }
 
-    // Create a link to the file and click it to download it
     let link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
+    link.href = `/case/notes/${encodeURIComponent(targetNoteId)}/export${case_param()}`;
+    link.hidden = true;
+    document.body.appendChild(link);
     link.click();
+    link.remove();
+    return false;
 }
 
 function add_note(directory_id) {
@@ -1314,6 +1356,14 @@ function createDirectoryListItem(directory, directoryMap) {
                     e.preventDefault();
                     copy_object_link_md('notes',note.id);
                 }));
+
+                menu.append($('<a></a>').addClass('dropdown-item').attr('href', '#')
+                    .append($('<i></i>').addClass('fa-solid fa-download mr-2'))
+                    .append(document.createTextNode('Export note'))
+                    .on('click', function (e) {
+                        e.preventDefault();
+                        download_note(note.id);
+                    }));
 
                 menu.append($('<a></a>').addClass('dropdown-item').attr('href', '#').text('Move').on('click', function (e) {
                     e.preventDefault();

@@ -72,13 +72,12 @@ function attribute_detail(attr_id) {
              return false;
         }
 
-        var editor = ace.edit("editor_detail",
+        var editor = create_iris_code_editor("editor_detail",
             {
                 autoScrollEditorIntoView: true,
                 minLines: 30,
             });
-        editor.setTheme("ace/theme/tomorrow");
-        editor.session.setMode("ace/mode/json");
+        editor.setMode("json");
         editor.renderer.setShowGutter(true);
         editor.setOption("showLineNumbers", true);
         editor.setOption("showPrintMargin", false);

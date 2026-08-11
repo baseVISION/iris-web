@@ -2,14 +2,13 @@ var ds_filter;
 
 function load_datastore() {
 
-    ds_filter = ace.edit("ds_file_search",
+    ds_filter = create_iris_code_editor("ds_file_search",
     {
         autoScrollEditorIntoView: true,
         minLines: 1,
         maxLines: 5
     });
-    ds_filter.setTheme("ace/theme/tomorrow");
-    ds_filter.session.setMode("ace/mode/json");
+    ds_filter.setMode("json");
     ds_filter.renderer.setShowGutter(false);
     ds_filter.setShowPrintMargin(false);
     ds_filter.renderer.setScrollMargin(10, 10);

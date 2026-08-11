@@ -56,6 +56,7 @@ function reset_note_collab_state(markdown) {
 function note_collab_payload(markdown) {
     return {
         csrf_token: $('#csrf_token').val(),
+        note_title: $('#currentNoteTitle').text() ? $('#currentNoteTitle').text() : $('#currentNoteTitleInput').val(),
         note_content: markdown || '',
         client_hash: window.IrisCollabSession.hashContent(markdown || ''),
     };
@@ -799,12 +800,21 @@ function save_note() {
             note_collab_persist_timer = null;
         }
         const md = get_active_note_markdown();
+        const currentNoteTitle = $('#currentNoteTitle').text() ? $('#currentNoteTitle').text() : $('#currentNoteTitleInput').val();
+        const titleChanged = previousNoteTitle !== currentNoteTitle;
         $('#btn_save_note').text("Snapshotting").removeClass('btn-success btn-danger').addClass('btn-warning');
-        note_collab_persist_and_snapshot(n_id, md, { forceSnapshot: true })
+        note_collab_persist_and_snapshot(n_id, md, { forcePersist: titleChanged, forceSnapshot: true })
             .then((result) => {
                 notify_success(result.revision_created
                     ? 'Note snapshot created.'
                     : 'Note already matches latest snapshot.');
+                if (titleChanged) {
+                    load_directories().then(function() {
+                        $('.note').removeClass('note-highlight');
+                        $('#note-' + n_id).addClass('note-highlight');
+                    });
+                    previousNoteTitle = currentNoteTitle;
+                }
             })
             .catch(() => {
                 $('#btn_save_note').text("Snapshot error").removeClass('btn-success btn-warning').addClass('btn-danger');
